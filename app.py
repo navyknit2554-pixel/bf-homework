@@ -260,6 +260,10 @@ if st.session_state.role == "student":
 
     if page == "📋 내 과제 목록":
         st.subheader("📋 내 과제 목록")
+
+        if "assign_subject" not in st.session_state:
+            st.session_state.assign_subject = None
+
         conn = get_db()
         assignments = conn.execute("""
             SELECT a.*, t.name AS teacher_name, t.subject,
@@ -275,14 +279,22 @@ if st.session_state.role == "student":
         if not assignments:
             st.info("현재 등록된 과제가 없습니다.")
         else:
-            pending = [a for a in assignments if a["sub_id"] is None]
-            done    = [a for a in assignments if a["sub_id"] is not None]
-            st.caption(f"미제출 {len(pending)}개  |  제출 완료 {len(done)}개")
             subj_map = defaultdict(list)
             for a in assignments:
                 subj_map[a["subject"] or "기타"].append(a)
-            for subject, alist in subj_map.items():
-                st.markdown(f"### 📖 {subject}")
+
+            if st.session_state.assign_subject:
+                if st.button("← 뒤로"):
+                    st.session_state.assign_subject = None
+                    st.rerun()
+
+                subject = st.session_state.assign_subject
+                alist   = subj_map.get(subject, [])
+                pending = [a for a in alist if a["sub_id"] is None]
+                done    = [a for a in alist if a["sub_id"] is not None]
+                st.markdown(f"**📖 {subject}**  —  미제출 {len(pending)}개  |  제출 완료 {len(done)}개")
+                st.divider()
+
                 for a in alist:
                     due_str = a["due_date"] or "마감일 없음"
                     is_late = False
@@ -326,10 +338,30 @@ if st.session_state.role == "student":
                             st.caption(f"제출 시각: {a['submitted_at']}")
                             if a["teacher_comment"]:
                                 st.info(f"💬 선생님 코멘트: {a['teacher_comment']}")
+            else:
+                # 과목 폴더 목록
+                total_pending = len([a for a in assignments if a["sub_id"] is None])
+                st.caption(f"전체 미제출 {total_pending}개")
                 st.divider()
+                cols = st.columns(3)
+                for i, (subject, alist) in enumerate(subj_map.items()):
+                    pending = len([a for a in alist if a["sub_id"] is None])
+                    done    = len([a for a in alist if a["sub_id"] is not None])
+                    badge   = f"🔴 미제출 {pending}" if pending else "✅ 모두 완료"
+                    with cols[i % 3]:
+                        if st.button(f"📖 {subject}\n과제 {len(alist)}개 · {badge}", key=f"asubj_{subject}", use_container_width=True):
+                            st.session_state.assign_subject = subject
+                            st.rerun()
 
     elif page == "🎬 강의 영상":
         st.subheader("🎬 강의 영상")
+
+        # 세션 초기화
+        if "video_subject" not in st.session_state:
+            st.session_state.video_subject = None
+        if "video_folder" not in st.session_state:
+            st.session_state.video_folder = None
+
         conn = get_db()
         videos = conn.execute("""
             SELECT v.*, t.name AS teacher_name, t.subject
@@ -339,20 +371,58 @@ if st.session_state.role == "student":
             ORDER BY t.subject, v.category, v.created_at DESC
         """, (info["grade"], info["class_name"])).fetchall()
         conn.close()
+
         if not videos:
             st.info("등록된 영상이 없습니다.")
         else:
             subj_map = defaultdict(lambda: defaultdict(list))
             for v in videos:
                 subj_map[v["subject"] or "기타"][v["category"] or "기본"].append(v)
-            for subject, cat_map in subj_map.items():
-                st.markdown(f"### 📖 {subject}")
-                for cat, vlist in cat_map.items():
-                    st.markdown(f"**📁 {cat}** ({len(vlist)}개)")
-                    for v in vlist:
-                        with st.expander(f"🎬 {v['title']}"):
-                            st.components.v1.iframe(youtube_embed_url(v["youtube_url"]), height=380)
+
+            # 뒤로가기
+            if st.session_state.video_folder:
+                if st.button("← 뒤로"):
+                    st.session_state.video_folder = None
+                    st.rerun()
+                # 영상 목록 표시
+                subject = st.session_state.video_subject
+                folder  = st.session_state.video_folder
+                vlist   = subj_map.get(subject, {}).get(folder, [])
+                st.markdown(f"**📖 {subject}  >  📁 {folder}** ({len(vlist)}개)")
                 st.divider()
+                for v in vlist:
+                    with st.expander(f"🎬 {v['title']}"):
+                        st.components.v1.iframe(youtube_embed_url(v["youtube_url"]), height=380)
+
+            elif st.session_state.video_subject:
+                if st.button("← 뒤로"):
+                    st.session_state.video_subject = None
+                    st.rerun()
+                # 폴더 목록 표시
+                subject  = st.session_state.video_subject
+                cat_map  = subj_map.get(subject, {})
+                st.markdown(f"**📖 {subject}** — 폴더 선택")
+                st.divider()
+                cols = st.columns(3)
+                for i, (cat, vlist) in enumerate(cat_map.items()):
+                    with cols[i % 3]:
+                        if st.button(f"📁 {cat}\n({len(vlist)}개)", key=f"folder_{cat}", use_container_width=True):
+                            st.session_state.video_subject = subject
+                            st.session_state.video_folder  = cat
+                            st.rerun()
+
+            else:
+                # 과목 목록 표시
+                st.markdown("**과목 선택**")
+                st.divider()
+                cols = st.columns(3)
+                for i, (subject, cat_map) in enumerate(subj_map.items()):
+                    total_videos = sum(len(v) for v in cat_map.values())
+                    with cols[i % 3]:
+                        if st.button(f"📖 {subject}\n({total_videos}개)", key=f"subj_{subject}", use_container_width=True):
+                            st.session_state.video_subject = subject
+                            st.session_state.video_folder  = None
+                            st.rerun()
 
     else:
         st.subheader("✅ 제출 완료 목록")
