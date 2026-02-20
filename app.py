@@ -16,23 +16,21 @@ st.set_page_config(
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
-SUPER_ADMIN_PASSWORD = "pathfinder2024"  # 통합 관리자 비밀번호
+SUPER_ADMIN_PASSWORD = "pathfinder2024"
 
-# ── 해시 함수 ──────────────────────────────────────────────────────────────────
-def name_to_code(name: str) -> str:
+def name_to_code(name):
     h = 5381
     for ch in name.strip():
         h = ((h * 33) ^ ord(ch)) & 0xFFFFFFFF
     return str((h % 900000) + 100000)
 
-def verify_code(name: str, code: str) -> bool:
+def verify_code(name, code):
     return name_to_code(name.strip()) == code.strip()
 
-def hash_pw(pw: str) -> str:
+def hash_pw(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
 
-# ── 유튜브 URL 변환 ────────────────────────────────────────────────────────────
-def youtube_embed_url(url: str) -> str:
+def youtube_embed_url(url):
     for p in [r"youtube\.com/watch\?v=([a-zA-Z0-9_-]+)",
               r"youtu\.be/([a-zA-Z0-9_-]+)",
               r"youtube\.com/embed/([a-zA-Z0-9_-]+)"]:
@@ -41,7 +39,6 @@ def youtube_embed_url(url: str) -> str:
             return f"https://www.youtube.com/embed/{m.group(1)}"
     return url
 
-# ── DB ─────────────────────────────────────────────────────────────────────────
 def get_db():
     conn = sqlite3.connect("homework.db", check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -105,21 +102,31 @@ def init_db():
         );
     """)
     conn.commit()
+    # 마이그레이션: 기존 DB에 없는 컬럼 추가
+    for sql in [
+        "ALTER TABLE videos ADD COLUMN category TEXT DEFAULT '기본'",
+        "ALTER TABLE videos ADD COLUMN teacher_id INTEGER",
+        "ALTER TABLE assignments ADD COLUMN teacher_id INTEGER",
+    ]:
+        try:
+            c.execute(sql)
+            conn.commit()
+        except:
+            pass
     conn.close()
 
 init_db()
 
-# ── 유틸 ───────────────────────────────────────────────────────────────────────
-def save_uploaded_file(uploaded_file, student_id, assignment_id, idx=0):
-    ext = Path(uploaded_file.name).suffix
+def save_uploaded_file(f, student_id, assignment_id, idx=0):
+    ext = Path(f.name).suffix
     filename = f"s{student_id}_a{assignment_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{idx}{ext}"
     path = UPLOAD_DIR / filename
-    with open(path, "wb") as f:
-        f.write(uploaded_file.read())
+    with open(path, "wb") as out:
+        out.write(f.read())
     return str(path)
 
-def save_multiple_files(uploaded_files, student_id, assignment_id):
-    return "|".join([save_uploaded_file(f, student_id, assignment_id, i) for i, f in enumerate(uploaded_files)])
+def save_multiple_files(files, student_id, assignment_id):
+    return "|".join([save_uploaded_file(f, student_id, assignment_id, i) for i, f in enumerate(files)])
 
 def get_grades():
     conn = get_db()
@@ -136,22 +143,19 @@ def get_classes(grade=None):
     conn.close()
     return [r["class_name"] for r in rows]
 
-# ── 세션 초기화 ────────────────────────────────────────────────────────────────
-for key in ["role", "student_id", "student_info", "teacher_id", "teacher_info", "pending_register"]:
+for key in ["role","student_id","student_info","teacher_id","teacher_info","pending_register"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
-# ── 헤더 ───────────────────────────────────────────────────────────────────────
 st.title("📚 패스파인더 학생 과제 제출 프로그램")
 st.caption("Pathfinder Korean Academy")
 st.divider()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 로그인 화면
+# 로그인
 # ══════════════════════════════════════════════════════════════════════════════
 if st.session_state.role is None:
 
-    # 신규 학생 학년/반 등록
     if st.session_state.pending_register is not None:
         info = st.session_state.pending_register
         st.info(f"✅ {info['name']} 학생 확인! 학년과 반을 입력해주세요. (최초 1회)")
@@ -211,7 +215,7 @@ if st.session_state.role is None:
         st.subheader("👩‍🏫 선생님 로그인")
         with st.form("teacher_login"):
             t_user = st.text_input("아이디", placeholder="teacher01")
-            t_pw = st.text_input("비밀번호", type="password")
+            t_pw   = st.text_input("비밀번호", type="password")
             if st.form_submit_button("로그인", use_container_width=True, type="primary"):
                 conn = get_db()
                 row = conn.execute("SELECT * FROM teachers WHERE username=? AND password_hash=?",
@@ -238,17 +242,17 @@ if st.session_state.role is None:
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 학생 페이지 (모든 선생님 과제/영상 통합)
+# 학생 페이지
 # ══════════════════════════════════════════════════════════════════════════════
 if st.session_state.role == "student":
     info = st.session_state.student_info
-    sid = st.session_state.student_id
+    sid  = st.session_state.student_id
 
     with st.sidebar:
         st.markdown(f"### 👋 {info['name']} 학생")
         st.caption(f"{info['grade']} {info['class_name']} · {info['student_code']}")
         st.divider()
-        page = st.radio("메뉴", ["📋 내 과제 목록", "✅ 제출 완료 목록", "🎬 강의 영상"])
+        page = st.radio("메뉴", ["📋 내 과제 목록","✅ 제출 완료 목록","🎬 강의 영상"])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -274,12 +278,9 @@ if st.session_state.role == "student":
             pending = [a for a in assignments if a["sub_id"] is None]
             done    = [a for a in assignments if a["sub_id"] is not None]
             st.caption(f"미제출 {len(pending)}개  |  제출 완료 {len(done)}개")
-
-            # 과목별 그룹핑
             subj_map = defaultdict(list)
             for a in assignments:
                 subj_map[a["subject"] or "기타"].append(a)
-
             for subject, alist in subj_map.items():
                 st.markdown(f"### 📖 {subject}")
                 for a in alist:
@@ -338,14 +339,12 @@ if st.session_state.role == "student":
             ORDER BY t.subject, v.category, v.created_at DESC
         """, (info["grade"], info["class_name"])).fetchall()
         conn.close()
-
         if not videos:
             st.info("등록된 영상이 없습니다.")
         else:
             subj_map = defaultdict(lambda: defaultdict(list))
             for v in videos:
                 subj_map[v["subject"] or "기타"][v["category"] or "기본"].append(v)
-
             for subject, cat_map in subj_map.items():
                 st.markdown(f"### 📖 {subject}")
                 for cat, vlist in cat_map.items():
@@ -388,17 +387,17 @@ if st.session_state.role == "student":
                                     open(fp,"rb").read(), file_name=Path(fp).name, key=f"dl_{fp}")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 선생님 페이지 (본인 과목만 관리)
+# 선생님 페이지
 # ══════════════════════════════════════════════════════════════════════════════
 elif st.session_state.role == "teacher":
     tinfo = st.session_state.teacher_info
-    tid = st.session_state.teacher_id
+    tid   = st.session_state.teacher_id
 
     with st.sidebar:
         st.markdown(f"### 👩‍🏫 {tinfo['name']} 선생님")
         st.caption(f"과목: {tinfo['subject']}")
         st.divider()
-        page = st.radio("메뉴", ["📊 현황", "📝 과제 등록", "📋 과제 관리", "🔍 제출 현황", "🎬 영상 관리"])
+        page = st.radio("메뉴", ["📊 현황","📝 과제 등록","📋 과제 관리","🔍 제출 현황","🎬 영상 관리"])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -408,37 +407,29 @@ elif st.session_state.role == "teacher":
     if page == "📊 현황":
         st.subheader(f"📊 {tinfo['subject']} 현황")
         conn = get_db()
-        n_assignments = conn.execute("SELECT COUNT(*) FROM assignments WHERE teacher_id=?", (tid,)).fetchone()[0]
-        n_submissions = conn.execute("""
-            SELECT COUNT(*) FROM submissions s
-            JOIN assignments a ON s.assignment_id = a.id WHERE a.teacher_id=?
-        """, (tid,)).fetchone()[0]
-        n_checked = conn.execute("""
-            SELECT COUNT(*) FROM submissions s
-            JOIN assignments a ON s.assignment_id = a.id WHERE a.teacher_id=? AND s.is_checked=1
-        """, (tid,)).fetchone()[0]
+        n_a = conn.execute("SELECT COUNT(*) FROM assignments WHERE teacher_id=?", (tid,)).fetchone()[0]
+        n_s = conn.execute("SELECT COUNT(*) FROM submissions s JOIN assignments a ON s.assignment_id=a.id WHERE a.teacher_id=?", (tid,)).fetchone()[0]
+        n_c = conn.execute("SELECT COUNT(*) FROM submissions s JOIN assignments a ON s.assignment_id=a.id WHERE a.teacher_id=? AND s.is_checked=1", (tid,)).fetchone()[0]
         conn.close()
         c1, c2, c3 = st.columns(3)
-        c1.metric("등록 과제", n_assignments)
-        c2.metric("제출 건수", n_submissions)
-        c3.metric("확인 완료", n_checked)
-
+        c1.metric("등록 과제", n_a)
+        c2.metric("제출 건수", n_s)
+        c3.metric("확인 완료", n_c)
         st.divider()
         st.subheader("📬 최근 제출")
         conn = get_db()
         recent = conn.execute("""
             SELECT s.submitted_at, st.name, st.grade, st.class_name, a.title, s.is_checked
             FROM submissions s
-            JOIN students st ON s.student_id = st.id
-            JOIN assignments a ON s.assignment_id = a.id
-            WHERE a.teacher_id=?
-            ORDER BY s.submitted_at DESC LIMIT 15
+            JOIN students st ON s.student_id=st.id
+            JOIN assignments a ON s.assignment_id=a.id
+            WHERE a.teacher_id=? ORDER BY s.submitted_at DESC LIMIT 15
         """, (tid,)).fetchall()
         conn.close()
         if recent:
             import pandas as pd
             df = pd.DataFrame([dict(r) for r in recent])
-            df.columns = ["제출 시각","이름","학년","반","과제명","확인"]
+            df.columns = ["제출시각","이름","학년","반","과제명","확인"]
             df["확인"] = df["확인"].map({1:"✔ 완료", 0:"⏳ 검토 중"})
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
@@ -447,14 +438,14 @@ elif st.session_state.role == "teacher":
     elif page == "📝 과제 등록":
         st.subheader("📝 새 과제 등록")
         with st.form("new_assignment"):
-            title = st.text_input("과제 제목 *", placeholder="예) 3강 문제풀이 사진 제출")
+            title       = st.text_input("과제 제목 *", placeholder="예) 3강 문제풀이 사진 제출")
             description = st.text_area("설명 (선택)")
-            col1, col2 = st.columns(2)
-            grades = get_grades() or ["중1","중2","중3","고1","고2","고3"]
-            grade = col1.selectbox("학년 *", grades)
-            classes = get_classes(grade) or ["A반","B반"]
-            class_name = col2.selectbox("반 *", classes)
-            due_date = st.date_input("마감일 (선택)", value=None)
+            col1, col2  = st.columns(2)
+            grades      = get_grades() or ["중1","중2","중3","고1","고2","고3"]
+            grade       = col1.selectbox("학년 *", grades)
+            classes     = get_classes(grade) or ["A반","B반"]
+            class_name  = col2.selectbox("반 *", classes)
+            due_date    = st.date_input("마감일 (선택)", value=None)
             if st.form_submit_button("과제 등록 ✅", type="primary", use_container_width=True):
                 if not title.strip():
                     st.error("제목을 입력해주세요.")
@@ -462,8 +453,7 @@ elif st.session_state.role == "teacher":
                     conn = get_db()
                     conn.execute(
                         "INSERT INTO assignments (title, description, grade, class_name, due_date, teacher_id) VALUES (?,?,?,?,?,?)",
-                        (title.strip(), description.strip(), grade, class_name,
-                         str(due_date) if due_date else None, tid))
+                        (title.strip(), description.strip(), grade, class_name, str(due_date) if due_date else None, tid))
                     conn.commit()
                     conn.close()
                     st.success(f"✅ '{title}' 과제가 등록되었습니다!")
@@ -473,7 +463,7 @@ elif st.session_state.role == "teacher":
         conn = get_db()
         assignments = conn.execute("""
             SELECT a.*, COUNT(s.id) AS sub_count FROM assignments a
-            LEFT JOIN submissions s ON a.id = s.assignment_id
+            LEFT JOIN submissions s ON a.id=s.assignment_id
             WHERE a.teacher_id=? GROUP BY a.id ORDER BY a.created_at DESC
         """, (tid,)).fetchall()
         conn.close()
@@ -503,21 +493,19 @@ elif st.session_state.role == "teacher":
         selected = st.selectbox("과제 선택", list(a_options.keys()))
         a_id = a_options[selected]
         conn = get_db()
-        sel_a = conn.execute("SELECT * FROM assignments WHERE id=?", (a_id,)).fetchone()
-        all_students = conn.execute(
-            "SELECT * FROM students WHERE grade=? AND class_name=? ORDER BY name",
-            (sel_a["grade"], sel_a["class_name"])).fetchall()
+        sel_a       = conn.execute("SELECT * FROM assignments WHERE id=?", (a_id,)).fetchone()
+        all_students= conn.execute("SELECT * FROM students WHERE grade=? AND class_name=? ORDER BY name", (sel_a["grade"], sel_a["class_name"])).fetchall()
         submissions = conn.execute("SELECT * FROM submissions WHERE assignment_id=?", (a_id,)).fetchall()
         conn.close()
         sub_map = {s["student_id"]: dict(s) for s in submissions}
         total = len(all_students)
-        done = len([s for s in all_students if s["id"] in sub_map])
-        pct = int(done/total*100) if total else 0
+        done  = len([s for s in all_students if s["id"] in sub_map])
+        pct   = int(done/total*100) if total else 0
         c1, c2, c3 = st.columns(3)
         c1.metric("전체 학생", total)
         c2.metric("제출 완료", done)
         c3.metric("제출률", f"{pct}%")
-        st.progress(pct / 100)
+        st.progress(pct/100)
         st.divider()
         for s in all_students:
             sub = sub_map.get(s["id"])
@@ -558,17 +546,17 @@ elif st.session_state.role == "teacher":
 
     elif page == "🎬 영상 관리":
         st.subheader("🎬 영상 관리")
-        tab1, tab2 = st.tabs(["영상 목록", "영상 등록"])
+        tab1, tab2 = st.tabs(["영상 목록","영상 등록"])
         with tab2:
             with st.form("add_video"):
-                v_title = st.text_input("영상 제목 *", placeholder="예) 1강 문학 개념 정리")
-                v_url = st.text_input("유튜브 URL *", placeholder="https://www.youtube.com/watch?v=...")
+                v_title    = st.text_input("영상 제목 *", placeholder="예) 1강 문학 개념 정리")
+                v_url      = st.text_input("유튜브 URL *", placeholder="https://www.youtube.com/watch?v=...")
                 v_category = st.text_input("폴더(카테고리)", placeholder="예) 1단원, 문학, 중간고사 대비")
                 col1, col2 = st.columns(2)
-                grades = get_grades() or ["중1","중2","중3","고1","고2","고3"]
-                v_grade = col1.selectbox("학년 *", grades, key="v_grade")
-                classes = get_classes(v_grade) or ["A반","B반"]
-                v_class = col2.selectbox("반 *", classes, key="v_class")
+                grades     = get_grades() or ["중1","중2","중3","고1","고2","고3"]
+                v_grade    = col1.selectbox("학년 *", grades, key="v_grade")
+                classes    = get_classes(v_grade) or ["A반","B반"]
+                v_class    = col2.selectbox("반 *", classes, key="v_class")
                 if st.form_submit_button("영상 등록 ✅", type="primary", use_container_width=True):
                     if not v_title.strip() or not v_url.strip():
                         st.error("제목과 URL을 입력해주세요.")
@@ -612,7 +600,7 @@ elif st.session_state.role == "admin":
     with st.sidebar:
         st.markdown("### 🔑 통합 관리자")
         st.divider()
-        page = st.radio("메뉴", ["📊 전체 현황", "👩‍🏫 선생님 관리", "👥 학생 관리"])
+        page = st.radio("메뉴", ["📊 전체 현황","👩‍🏫 선생님 관리","👥 학생 관리"])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -621,17 +609,16 @@ elif st.session_state.role == "admin":
     if page == "📊 전체 현황":
         st.subheader("📊 전체 현황")
         conn = get_db()
-        n_teachers    = conn.execute("SELECT COUNT(*) FROM teachers").fetchone()[0]
-        n_students    = conn.execute("SELECT COUNT(*) FROM students").fetchone()[0]
-        n_assignments = conn.execute("SELECT COUNT(*) FROM assignments").fetchone()[0]
-        n_submissions = conn.execute("SELECT COUNT(*) FROM submissions").fetchone()[0]
+        n_t = conn.execute("SELECT COUNT(*) FROM teachers").fetchone()[0]
+        n_s = conn.execute("SELECT COUNT(*) FROM students").fetchone()[0]
+        n_a = conn.execute("SELECT COUNT(*) FROM assignments").fetchone()[0]
+        n_sub = conn.execute("SELECT COUNT(*) FROM submissions").fetchone()[0]
         conn.close()
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("선생님", n_teachers)
-        c2.metric("학생", n_students)
-        c3.metric("전체 과제", n_assignments)
-        c4.metric("전체 제출", n_submissions)
-
+        c1.metric("선생님", n_t)
+        c2.metric("학생", n_s)
+        c3.metric("전체 과제", n_a)
+        c4.metric("전체 제출", n_sub)
         st.divider()
         st.subheader("📬 최근 제출 현황")
         conn = get_db()
@@ -639,9 +626,9 @@ elif st.session_state.role == "admin":
             SELECT s.submitted_at, st.name, st.grade, st.class_name,
                    a.title, t.subject, t.name AS teacher_name, s.is_checked
             FROM submissions s
-            JOIN students st ON s.student_id = st.id
-            JOIN assignments a ON s.assignment_id = a.id
-            LEFT JOIN teachers t ON a.teacher_id = t.id
+            JOIN students st ON s.student_id=st.id
+            JOIN assignments a ON s.assignment_id=a.id
+            LEFT JOIN teachers t ON a.teacher_id=t.id
             ORDER BY s.submitted_at DESC LIMIT 20
         """).fetchall()
         conn.close()
@@ -657,8 +644,7 @@ elif st.session_state.role == "admin":
 
     elif page == "👩‍🏫 선생님 관리":
         st.subheader("👩‍🏫 선생님 관리")
-        tab1, tab2 = st.tabs(["선생님 목록", "선생님 추가"])
-
+        tab1, tab2 = st.tabs(["선생님 목록","선생님 추가"])
         with tab1:
             conn = get_db()
             teachers = conn.execute("SELECT id, name, username, subject, created_at FROM teachers ORDER BY subject").fetchall()
@@ -671,7 +657,6 @@ elif st.session_state.role == "admin":
                 df = df[["name","username","subject","created_at"]]
                 df.columns = ["이름","아이디","담당과목","등록일"]
                 st.dataframe(df, use_container_width=True, hide_index=True)
-
                 st.divider()
                 st.markdown("#### 🗑 선생님 삭제")
                 t_options = {f"{t['name']} ({t['subject']})": t["id"] for t in teachers}
@@ -683,7 +668,6 @@ elif st.session_state.role == "admin":
                     conn.close()
                     st.success("삭제되었습니다.")
                     st.rerun()
-
         with tab2:
             st.markdown("#### 새 선생님 계정 추가")
             with st.form("add_teacher"):
@@ -691,8 +675,8 @@ elif st.session_state.role == "admin":
                 t_name    = col1.text_input("이름 *", placeholder="김철수")
                 t_subject = col2.text_input("담당과목 *", placeholder="국어")
                 col3, col4 = st.columns(2)
-                t_user = col3.text_input("아이디 *", placeholder="teacher01")
-                t_pw   = col4.text_input("비밀번호 *", type="password")
+                t_user    = col3.text_input("아이디 *", placeholder="teacher01")
+                t_pw      = col4.text_input("비밀번호 *", type="password")
                 if st.form_submit_button("선생님 추가 ✅", type="primary", use_container_width=True):
                     if not all([t_name, t_subject, t_user, t_pw]):
                         st.error("모든 항목을 입력해주세요.")
@@ -703,7 +687,7 @@ elif st.session_state.role == "admin":
                                 "INSERT INTO teachers (name, username, password_hash, subject) VALUES (?,?,?,?)",
                                 (t_name.strip(), t_user.strip(), hash_pw(t_pw), t_subject.strip()))
                             conn.commit()
-                            st.success(f"✅ {t_name} 선생님 계정이 생성되었습니다! (아이디: {t_user})")
+                            st.success(f"✅ {t_name} 선생님 계정 생성 완료! (아이디: {t_user})")
                             st.rerun()
                         except sqlite3.IntegrityError:
                             st.error("이미 존재하는 아이디입니다.")
@@ -712,7 +696,7 @@ elif st.session_state.role == "admin":
 
     elif page == "👥 학생 관리":
         st.subheader("👥 학생 관리")
-        tab1, tab2 = st.tabs(["학생 목록", "학번 조회"])
+        tab1, tab2 = st.tabs(["학생 목록","학번 조회"])
         with tab1:
             conn = get_db()
             students = conn.execute("SELECT * FROM students ORDER BY grade, class_name, name").fetchall()
