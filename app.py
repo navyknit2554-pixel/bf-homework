@@ -32,26 +32,33 @@ def hash_pw(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
 
 def create_parent_account(student):
-    """학생 등록 시 학부모 계정 자동 생성. 이미 있으면 skip."""
-    username = str(student["student_code"]) + "p"
-    default_pw = hash_pw(str(student["student_code"]))  # 초기 비밀번호 = 학번
+    """학생 등록/동기화 시 학부모 계정 생성. 비밀번호는 항상 학번으로 유지."""
+    username  = str(student["student_code"]) + "p"
+    pw_hash   = hash_pw(str(student["student_code"]))
     parent_phone = student.get("parent_phone") or ""
     conn = get_db()
     try:
-        conn.execute(
-            "INSERT OR IGNORE INTO parents (username, password_hash, parent_phone) VALUES (?,?,?)",
-            (username, default_pw, parent_phone))
+        conn.execute("""
+            INSERT INTO parents (username, password_hash, parent_phone)
+            VALUES (?,?,?)
+            ON CONFLICT(username) DO UPDATE SET
+                password_hash = excluded.password_hash,
+                parent_phone  = excluded.parent_phone
+        """, (username, pw_hash, parent_phone))
         conn.commit()
     finally:
         conn.close()
 
 def sync_all_parent_accounts():
-    """기존 학생 전체에 대해 학부모 계정 일괄 생성 (없는 경우에만)."""
-    conn = get_db()
-    students = conn.execute("SELECT * FROM students").fetchall()
-    conn.close()
-    for s in students:
-        create_parent_account(dict(s))
+    """기존 학생 전체 학부모 계정 생성 + 비밀번호 학번으로 동기화."""
+    try:
+        conn = get_db()
+        students = conn.execute("SELECT * FROM students").fetchall()
+        conn.close()
+        for s in students:
+            create_parent_account(dict(s))
+    except Exception:
+        pass
 
 def youtube_embed_url(url):
     for p in [r"youtube\.com/watch\?v=([a-zA-Z0-9_-]+)",
@@ -393,11 +400,20 @@ if st.session_state.role is None:
 
     with col3:
         st.subheader("👨‍👩‍👧 학부모 로그인")
+        st.caption("아이디: 자녀 학번+p  |  비밀번호: 자녀 학번")
         with st.form("parent_login"):
-            p_user = st.text_input("아이디", placeholder="학번+p (예: 284713p)")
-            p_pw   = st.text_input("비밀번호", type="password", placeholder="초기: 자녀 학번")
+            p_user = st.text_input("아이디", placeholder="예) 284713p")
+            p_pw   = st.text_input("비밀번호", type="password", placeholder="예) 284713")
             if st.form_submit_button("로그인", use_container_width=True, type="primary"):
                 conn = get_db()
+                # parents 테이블 없으면 자동 생성
+                conn.execute("""CREATE TABLE IF NOT EXISTS parents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    parent_phone TEXT,
+                    created_at TEXT DEFAULT (datetime('now','localtime')))""")
+                conn.commit()
                 row = conn.execute(
                     "SELECT * FROM parents WHERE username=? AND password_hash=?",
                     (p_user.strip(), hash_pw(p_pw))).fetchone()
@@ -2149,6 +2165,33 @@ elif st.session_state.role == "admin":
             conn = get_db()
             students = conn.execute("SELECT * FROM students ORDER BY grade, class_name, name").fetchall()
             conn.close()
+
+            # 학부모 계정 동기화 버튼
+            with st.expander("🔧 학부모 계정 관리"):
+                st.caption("학생 등록 후 학부모 계정이 생성되지 않았다면 아래 버튼을 눌러 일괄 생성하세요.")
+                col_sync1, col_sync2 = st.columns(2)
+                if col_sync1.button("🔄 전체 학생 학부모 계정 동기화", use_container_width=True):
+                    conn2 = get_db()
+                    all_sts = conn2.execute("SELECT * FROM students").fetchall()
+                    conn2.close()
+                    cnt = 0
+                    for s in all_sts:
+                        uname = str(s["student_code"]) + "p"
+                        conn2 = get_db()
+                        existing = conn2.execute("SELECT id FROM parents WHERE username=?", (uname,)).fetchone()
+                        conn2.close()
+                        if not existing:
+                            create_parent_account(dict(s))
+                            cnt += 1
+                    st.success(f"✅ 완료! 신규 생성: {cnt}명 / 전체: {len(all_sts)}명")
+                    st.cache_data.clear()
+                # 현재 parents 테이블 현황
+                conn2 = get_db()
+                parent_count = conn2.execute("SELECT COUNT(*) FROM parents").fetchone()[0]
+                student_count = conn2.execute("SELECT COUNT(*) FROM students").fetchone()[0]
+                conn2.close()
+                col_sync2.metric("학부모 계정 수", f"{parent_count}개", f"학생 {student_count}명")
+
             import pandas as pd
             if not students:
                 st.info("등록된 학생이 없습니다.")
