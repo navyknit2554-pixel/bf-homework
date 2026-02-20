@@ -636,74 +636,97 @@ elif st.session_state.role == "teacher":
                         col1.success("✔ 확인 완료")
                     with st.form(f"comment_{sub['id']}"):
                         comment = st.text_input("선생님 코멘트", value=sub["teacher_comment"] or "")
-                        if st.form_submit_button("저장"):
-                            conn = get_db()
-                            conn.execute("UPDATE submissions SET teacher_comment=? WHERE id=?", (comment, sub["id"]))
-                            conn.commit()
-                            conn.close()
-                            st.rerun()
+                        if st.form_submit_button("코멘트 저장 ✅", use_container_width=True):
+                            if not comment.strip():
+                                st.error("코멘트 내용을 입력해주세요.")
+                            else:
+                                conn = get_db()
+                                conn.execute("UPDATE submissions SET teacher_comment=? WHERE id=?", (comment, sub["id"]))
+                                conn.commit()
+                                conn.close()
+                                st.success("코멘트가 저장되었습니다! ✅")
+                                st.rerun()
 
     elif "💬 질문 관리" in page:
         st.subheader("💬 질문 관리")
         tab1, tab2 = st.tabs(["미답변 질문", "전체 질문"])
 
-        for tab, answered_filter, empty_msg in [
-            (tab1, False, "미답변 질문이 없습니다. 🎉"),
-            (tab2, None,  "아직 질문이 없습니다.")
-        ]:
-            with tab:
-                conn = get_db()
-                if answered_filter is False:
-                    questions = conn.execute("""
-                        SELECT q.*, s.name AS student_name, s.grade, s.class_name
-                        FROM questions q
-                        JOIN students s ON q.student_id = s.id
-                        WHERE q.teacher_id=? AND q.is_answered=0
-                        ORDER BY q.created_at DESC
-                    """, (tid,)).fetchall()
-                else:
-                    questions = conn.execute("""
-                        SELECT q.*, s.name AS student_name, s.grade, s.class_name
-                        FROM questions q
-                        JOIN students s ON q.student_id = s.id
-                        WHERE q.teacher_id=?
-                        ORDER BY q.is_answered ASC, q.created_at DESC
-                    """, (tid,)).fetchall()
-                conn.close()
+        with tab1:
+            conn = get_db()
+            questions = conn.execute("""
+                SELECT q.*, s.name AS student_name, s.grade, s.class_name
+                FROM questions q
+                JOIN students s ON q.student_id = s.id
+                WHERE q.teacher_id=? AND q.is_answered=0
+                ORDER BY q.created_at DESC
+            """, (tid,)).fetchall()
+            conn.close()
+            if not questions:
+                st.info("미답변 질문이 없습니다. 🎉")
+            else:
+                for q in questions:
+                    student_tag = f"{q['student_name']} ({q['grade']} {q['class_name']})"
+                    with st.expander(f"⏳ 미답변  |  {q['title']}  —  {student_tag}  {q['created_at'][:10]}"):
+                        st.markdown("**질문 내용:**")
+                        st.write(q["content"])
+                        st.divider()
+                        with st.form(f"answer_unanswered_{q['id']}"):
+                            answer_text = st.text_area("답변 입력", value="", height=120)
+                            if st.form_submit_button("답변 등록 ✅", type="primary", use_container_width=True):
+                                if not answer_text.strip():
+                                    st.error("답변 내용을 입력해주세요.")
+                                else:
+                                    conn = get_db()
+                                    conn.execute("""
+                                        UPDATE questions SET answer=?, is_answered=1,
+                                        answered_at=datetime('now','localtime') WHERE id=?
+                                    """, (answer_text.strip(), q["id"]))
+                                    conn.commit()
+                                    conn.close()
+                                    st.success("답변이 등록되었습니다! ✅")
+                                    st.rerun()
 
-                if not questions:
-                    st.info(empty_msg)
-                else:
-                    for q in questions:
-                        status = "✅ 답변 완료" if q["is_answered"] else "⏳ 미답변"
-                        student_tag = f"{q['student_name']} ({q['grade']} {q['class_name']})"
-                        with st.expander(f"{status}  |  {q['title']}  —  {student_tag}  {q['created_at'][:10]}"):
-                            st.markdown(f"**질문 내용:**")
-                            st.write(q["content"])
-                            st.divider()
-                            if q["is_answered"] and q["answer"]:
-                                st.markdown("**내 답변:**")
-                                st.success(q["answer"])
-                                st.caption(f"답변일: {q['answered_at'][:10] if q['answered_at'] else ''}")
-                            with st.form(f"answer_{q['id']}"):
-                                answer_text = st.text_area(
-                                    "답변 입력" if not q["is_answered"] else "답변 수정",
-                                    value=q["answer"] or "",
-                                    height=120
-                                )
-                                if st.form_submit_button("답변 등록 ✅" if not q["is_answered"] else "수정 저장", type="primary", use_container_width=True):
-                                    if not answer_text.strip():
-                                        st.error("답변 내용을 입력해주세요.")
-                                    else:
-                                        conn = get_db()
-                                        conn.execute("""
-                                            UPDATE questions SET answer=?, is_answered=1,
-                                            answered_at=datetime('now','localtime') WHERE id=?
-                                        """, (answer_text.strip(), q["id"]))
-                                        conn.commit()
-                                        conn.close()
-                                        st.success("답변이 등록되었습니다!")
-                                        st.rerun()
+        with tab2:
+            conn = get_db()
+            questions = conn.execute("""
+                SELECT q.*, s.name AS student_name, s.grade, s.class_name
+                FROM questions q
+                JOIN students s ON q.student_id = s.id
+                WHERE q.teacher_id=?
+                ORDER BY q.is_answered ASC, q.created_at DESC
+            """, (tid,)).fetchall()
+            conn.close()
+            if not questions:
+                st.info("아직 질문이 없습니다.")
+            else:
+                for q in questions:
+                    status = "✅ 답변 완료" if q["is_answered"] else "⏳ 미답변"
+                    student_tag = f"{q['student_name']} ({q['grade']} {q['class_name']})"
+                    with st.expander(f"{status}  |  {q['title']}  —  {student_tag}  {q['created_at'][:10]}"):
+                        st.markdown("**질문 내용:**")
+                        st.write(q["content"])
+                        st.divider()
+                        if q["is_answered"] and q["answer"]:
+                            st.markdown("**내 답변:**")
+                            st.success(q["answer"])
+                            st.caption(f"답변일: {q['answered_at'][:10] if q['answered_at'] else ''}")
+                        with st.form(f"answer_all_{q['id']}"):
+                            answer_text = st.text_area(
+                                "답변 수정" if q["is_answered"] else "답변 입력",
+                                value=q["answer"] or "", height=120)
+                            if st.form_submit_button("수정 저장" if q["is_answered"] else "답변 등록 ✅", type="primary", use_container_width=True):
+                                if not answer_text.strip():
+                                    st.error("답변 내용을 입력해주세요.")
+                                else:
+                                    conn = get_db()
+                                    conn.execute("""
+                                        UPDATE questions SET answer=?, is_answered=1,
+                                        answered_at=datetime('now','localtime') WHERE id=?
+                                    """, (answer_text.strip(), q["id"]))
+                                    conn.commit()
+                                    conn.close()
+                                    st.success("답변이 저장되었습니다! ✅")
+                                    st.rerun()
 
     elif page == "🎬 영상 관리":
         st.subheader("🎬 영상 관리")
@@ -741,18 +764,19 @@ elif st.session_state.role == "teacher":
                 for v in videos:
                     group_map[f"{v['grade']} {v['class_name']}"][v["category"] or "기본"].append(v)
                 for group, cat_map in group_map.items():
-                    st.markdown(f"#### 👥 {group}")
-                    for cat, vlist in cat_map.items():
-                        st.markdown(f"**📁 {cat}** ({len(vlist)}개)")
-                        for v in vlist:
-                            with st.expander(f"🎬 {v['title']}"):
-                                st.components.v1.iframe(youtube_embed_url(v["youtube_url"]), height=300)
-                                if st.button("🗑 삭제", key=f"vdel_{v['id']}"):
-                                    conn = get_db()
-                                    conn.execute("DELETE FROM videos WHERE id=?", (v["id"],))
-                                    conn.commit()
-                                    conn.close()
-                                    st.rerun()
+                    total = sum(len(vl) for vl in cat_map.values())
+                    with st.expander(f"👥 {group}  —  영상 {total}개"):
+                        for cat, vlist in cat_map.items():
+                            with st.expander(f"📁 {cat}  ({len(vlist)}개)"):
+                                for v in vlist:
+                                    with st.expander(f"🎬 {v['title']}"):
+                                        st.components.v1.iframe(youtube_embed_url(v["youtube_url"]), height=300)
+                                        if st.button("🗑 삭제", key=f"vdel_{v['id']}"):
+                                            conn = get_db()
+                                            conn.execute("DELETE FROM videos WHERE id=?", (v["id"],))
+                                            conn.commit()
+                                            conn.close()
+                                            st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 통합 관리자 페이지
