@@ -593,24 +593,31 @@ if st.session_state.role == "student":
                     h_cols[i+1].markdown(f"**{d}요일**")
                 st.divider()
                 for p in range(1, max_p+1):
+                    st.markdown("<hr style='margin:2px 0;border:none;border-top:1px solid #1e293b;'>", unsafe_allow_html=True)
                     r_cols = st.columns([1]+[2]*len(DAYS))
                     pt = pt_map_s.get(p)
+                    row_bg = "#111827" if p % 2 == 1 else "#0d1117"
                     if pt and pt["start_time"]:
                         time_label = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
-                        r_cols[0].markdown(f"**{p}교시**<br><span style='font-size:0.7rem;color:#64748b;'>{time_label}</span>", unsafe_allow_html=True)
+                        r_cols[0].markdown(
+                            f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px 8px;border-radius:4px;'>"
+                            f"<b>{p}교시</b><br><span style='font-size:0.7rem;color:#64748b;'>{time_label}</span></div>",
+                            unsafe_allow_html=True)
                     else:
-                        r_cols[0].markdown(f"**{p}교시**")
+                        r_cols[0].markdown(
+                            f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px 8px;border-radius:4px;'>"
+                            f"<b>{p}교시</b></div>", unsafe_allow_html=True)
                     for i, d in enumerate(DAYS):
                         cell = tt.get((d, p))
                         if cell and cell["subject"]:
                             r_cols[i+1].markdown(
-                                f"<div style='background:#1e3a5f;border-radius:6px;padding:6px 8px;text-align:center;font-size:0.85rem;'>"
+                                f"<div style='background:#1e3a5f;border-radius:6px;padding:6px 8px;text-align:center;font-size:0.85rem;margin:2px;'>"
                                 f"<b>{cell['subject']}</b>"
                                 f"<div style='color:#94a3b8;font-size:0.75rem;'>{cell['teacher_name'] or ''}</div>"
                                 f"</div>", unsafe_allow_html=True)
                         else:
                             r_cols[i+1].markdown(
-                                "<div style='background:#0f172a;border-radius:6px;padding:6px 8px;text-align:center;color:#334155;font-size:0.85rem;'>—</div>",
+                                f"<div style='background:{row_bg};border-radius:6px;padding:6px 8px;text-align:center;color:#334155;font-size:0.85rem;margin:2px;'>—</div>",
                                 unsafe_allow_html=True)
 
         # ── 날짜별 일정 탭 ──
@@ -792,13 +799,20 @@ elif st.session_state.role == "teacher":
                 pt_map_t = {r["period"]: r for r in pt_rows_t}
 
                 for p in range(1, max_p+1):
+                    st.markdown("<hr style='margin:2px 0;border:none;border-top:1px solid #1e293b;'>", unsafe_allow_html=True)
                     r_cols = st.columns([1]+[2]*len(DAYS))
                     pt = pt_map_t.get(p)
+                    row_bg = "#111827" if p % 2 == 1 else "#0d1117"
                     if pt and pt["start_time"]:
                         time_label = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
-                        r_cols[0].markdown(f"**{p}교시**<br><span style='font-size:0.7rem;color:#64748b;'>{time_label}</span>", unsafe_allow_html=True)
+                        r_cols[0].markdown(
+                            f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px 8px;border-radius:4px;'>"
+                            f"<b>{p}교시</b><br><span style='font-size:0.7rem;color:#64748b;'>{time_label}</span></div>",
+                            unsafe_allow_html=True)
                     else:
-                        r_cols[0].markdown(f"**{p}교시**")
+                        r_cols[0].markdown(
+                            f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px 8px;border-radius:4px;'>"
+                            f"<b>{p}교시</b></div>", unsafe_allow_html=True)
                     for i, d in enumerate(DAYS):
                         cell = tt.get((d, p))
                         if cell and cell["subject"]:
@@ -1477,23 +1491,29 @@ elif st.session_state.role == "admin":
                 hc[0].markdown("**교시**")
                 for i, d in enumerate(DAYS): hc[i+1].markdown(f"**{d}**")
                 for p in range(1, max_p+1):
+                    st.markdown("<hr style='margin:2px 0;border:none;border-top:1px solid #1e293b;'>", unsafe_allow_html=True)
                     rc = st.columns([1]+[2]*len(DAYS))
                     pt = pt_preview_map.get(p)
                     time_str = ""
+                    row_bg = "#111827" if p % 2 == 1 else "#0d1117"
                     if pt and pt["start_time"]:
                         tl = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
                         time_str = f"<br><span style='font-size:0.7rem;color:#64748b;'>{tl}</span>"
-                    rc[0].markdown(f"**{p}교시**{time_str}", unsafe_allow_html=True)
+                    rc[0].markdown(
+                        f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px 8px;border-radius:4px;'>"
+                        f"<b>{p}교시</b>{time_str}</div>", unsafe_allow_html=True)
                     for i, d in enumerate(DAYS):
                         cell = tt.get((d,p))
                         if cell and cell["subject"]:
                             rc[i+1].markdown(
-                                f"<div style='background:#1e3a5f;border-radius:5px;padding:4px 6px;text-align:center;font-size:0.8rem;'>"
+                                f"<div style='background:#1e3a5f;border-radius:5px;padding:6px 8px;text-align:center;font-size:0.8rem;margin:2px;'>"
                                 f"<b>{cell['subject']}</b>"
                                 f"<div style='color:#94a3b8;font-size:0.7rem;'>{cell['teacher_name'] or ''}</div>"
                                 f"</div>", unsafe_allow_html=True)
                         else:
-                            rc[i+1].markdown("<div style='color:#334155;text-align:center;'>—</div>", unsafe_allow_html=True)
+                            rc[i+1].markdown(
+                                f"<div style='background:{row_bg};border-radius:5px;padding:6px 8px;text-align:center;color:#334155;font-size:0.8rem;margin:2px;'>—</div>",
+                                unsafe_allow_html=True)
 
         # ── 날짜별 일정 편집 ──
         with tab_sch:
