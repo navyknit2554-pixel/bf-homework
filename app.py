@@ -96,6 +96,7 @@ def init_db():
             subject TEXT,
             title TEXT NOT NULL,
             content TEXT NOT NULL,
+            image_paths TEXT,
             answer TEXT,
             is_answered INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now','localtime')),
@@ -121,6 +122,7 @@ def init_db():
         "ALTER TABLE videos ADD COLUMN category TEXT DEFAULT '기본'",
         "ALTER TABLE videos ADD COLUMN teacher_id INTEGER",
         "ALTER TABLE assignments ADD COLUMN teacher_id INTEGER",
+        "ALTER TABLE questions ADD COLUMN image_paths TEXT",
         """CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER NOT NULL,
@@ -408,17 +410,31 @@ if st.session_state.role == "student":
                     st.info("등록된 선생님이 없습니다.")
                 q_title   = st.text_input("제목 *", placeholder="예) 3강 2번 문제 질문")
                 q_content = st.text_area("질문 내용 *", placeholder="궁금한 내용을 자세히 적어주세요.", height=150)
+                q_images  = st.file_uploader("📸 이미지 첨부 (선택, 여러 장 가능)",
+                    type=["jpg","jpeg","png"], accept_multiple_files=True)
                 if st.form_submit_button("질문 등록 ✅", type="primary", use_container_width=True):
                     if not q_title.strip() or not q_content.strip():
                         st.error("제목과 내용을 모두 입력해주세요.")
                     else:
+                        # 이미지 저장
+                        img_paths = ""
+                        if q_images:
+                            paths = []
+                            for i, img in enumerate(q_images):
+                                ext = Path(img.name).suffix
+                                fname = f"q_{sid}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}{ext}"
+                                fpath = UPLOAD_DIR / fname
+                                with open(fpath, "wb") as f:
+                                    f.write(img.read())
+                                paths.append(str(fpath))
+                            img_paths = "|".join(paths)
                         conn = get_db()
                         conn.execute(
-                            "INSERT INTO questions (student_id, teacher_id, subject, title, content) VALUES (?,?,?,?,?)",
-                            (sid, t_id, subject, q_title.strip(), q_content.strip()))
+                            "INSERT INTO questions (student_id, teacher_id, subject, title, content, image_paths) VALUES (?,?,?,?,?,?)",
+                            (sid, t_id, subject, q_title.strip(), q_content.strip(), img_paths or None))
                         conn.commit()
                         conn.close()
-                        st.success("질문이 등록되었습니다! 선생님 답변을 기다려주세요. 📨")
+                        st.success(f"질문이 등록되었습니다! {'📸 이미지 ' + str(len(q_images)) + '장 첨부됨  ' if q_images else ''}선생님 답변을 기다려주세요. 📨")
                         st.rerun()
 
         with tab2:
@@ -439,8 +455,13 @@ if st.session_state.role == "student":
                     status = "✅ 답변 완료" if q["is_answered"] else "⏳ 답변 대기"
                     teacher_tag = f" · {q['teacher_name']}" if q["teacher_name"] else ""
                     with st.expander(f"{status}  |  {q['title']}{teacher_tag}  —  {q['created_at'][:10]}"):
-                        st.markdown(f"**질문:**")
+                        st.markdown("**질문:**")
                         st.write(q["content"])
+                        if q["image_paths"]:
+                            st.markdown("**📸 첨부 이미지:**")
+                            for fp in q["image_paths"].split("|"):
+                                if os.path.exists(fp):
+                                    st.image(fp, use_column_width=True)
                         if q["is_answered"] and q["answer"]:
                             st.divider()
                             st.markdown(f"**💬 선생님 답변** ({q['answered_at'][:10] if q['answered_at'] else ''}):")
@@ -669,6 +690,11 @@ elif st.session_state.role == "teacher":
                     with st.expander(f"⏳ 미답변  |  {q['title']}  —  {student_tag}  {q['created_at'][:10]}"):
                         st.markdown("**질문 내용:**")
                         st.write(q["content"])
+                        if q["image_paths"]:
+                            st.markdown("**📸 첨부 이미지:**")
+                            for fp in q["image_paths"].split("|"):
+                                if os.path.exists(fp):
+                                    st.image(fp, use_column_width=True)
                         st.divider()
                         with st.form(f"answer_unanswered_{q['id']}"):
                             answer_text = st.text_area("답변 입력", value="", height=120)
@@ -705,6 +731,11 @@ elif st.session_state.role == "teacher":
                     with st.expander(f"{status}  |  {q['title']}  —  {student_tag}  {q['created_at'][:10]}"):
                         st.markdown("**질문 내용:**")
                         st.write(q["content"])
+                        if q["image_paths"]:
+                            st.markdown("**📸 첨부 이미지:**")
+                            for fp in q["image_paths"].split("|"):
+                                if os.path.exists(fp):
+                                    st.image(fp, use_column_width=True)
                         st.divider()
                         if q["is_answered"] and q["answer"]:
                             st.markdown("**내 답변:**")
