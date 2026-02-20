@@ -6,7 +6,9 @@ from pathlib import Path
 
 st.set_page_config(
     page_title="BF 국어연구소 과제 관리",
-    page_icon="st.image("BFlogo.png", width=200)",
+    page_icon="🟦",
+    st.image("BFlogo.png", width=200)
+st.title("BF 국어연구소 학생 과제 제출 프로그램")
     layout="wide",
     initial_sidebar_state="expanded",
 )
