@@ -21,7 +21,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 try:
     SUPER_ADMIN_PASSWORD = st.secrets["admin_password"]
 except:
-    SUPER_ADMIN_PASSWORD = "pathfinder2024"
+    SUPER_ADMIN_PASSWORD = "modoohakgwan1234"
 
 def name_to_code(name):
     h = 5381
