@@ -716,7 +716,12 @@ if st.session_state.role == "student":
         for n in subject_notices:
             all_notices_merged.append(("subject", n))
         # 최신순 정렬
-        all_notices_merged.sort(key=lambda x: x[1]["created_at"], reverse=True)
+        all_notices_merged.sort(key=lambda x: (0 if x[0]=="global" else 1, -ord(x[1]["created_at"][0]) if x[1]["created_at"] else 0))
+        all_notices_merged.sort(key=lambda x: (0 if x[0]=="global" else 1))
+        # 각 그룹 내 최신순 유지
+        global_part  = sorted([x for x in all_notices_merged if x[0]=="global"],  key=lambda x: x[1]["created_at"], reverse=True)
+        subject_part = sorted([x for x in all_notices_merged if x[0]=="subject"], key=lambda x: x[1]["created_at"], reverse=True)
+        all_notices_merged = global_part + subject_part
 
         if not all_notices_merged:
             st.info("공지사항이 없습니다.")
@@ -991,7 +996,9 @@ elif st.session_state.role == "parent":
             all_notices_merged_p.append(("global", n))
         for n in subject_notices_p:
             all_notices_merged_p.append(("subject", n))
-        all_notices_merged_p.sort(key=lambda x: x[1]["created_at"], reverse=True)
+        global_part_p  = sorted([x for x in all_notices_merged_p if x[0]=="global"],  key=lambda x: x[1]["created_at"], reverse=True)
+        subject_part_p = sorted([x for x in all_notices_merged_p if x[0]=="subject"], key=lambda x: x[1]["created_at"], reverse=True)
+        all_notices_merged_p = global_part_p + subject_part_p
 
         if not all_notices_merged_p:
             st.info("공지사항이 없습니다.")
