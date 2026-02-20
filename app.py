@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
- st.image("BFlogo.png", width=200)
+st.image("BFlogo.png", width=200)
 st.title("BF 국어연구소 학생 과제 제출 프로그램")
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
