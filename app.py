@@ -303,7 +303,7 @@ def get_classes(grade=None):
     conn.close()
     return [r["class_name"] for r in rows]
 
-for key in ["role","student_id","student_info","teacher_id","teacher_info","parent_id","parent_info","pending_register"]:
+for key in ["role","student_id","student_info","teacher_id","teacher_info","parent_id","parent_info","pending_register","admin_selected_student"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
@@ -312,6 +312,12 @@ sync_all_parent_accounts()
 
 st.title("📚 패스파인더 학생 과제 제출 프로그램")
 st.caption("Pathfinder Korean Academy")
+st.markdown("""
+<style>
+div[data-testid="stRadio"] > div { display: flex; flex-direction: column; gap: 6px; }
+div[data-testid="stRadio"] label { padding: 6px 10px !important; border-radius: 6px; }
+</style>
+""", unsafe_allow_html=True)
 st.divider()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -347,9 +353,39 @@ if st.session_state.role is None:
             st.rerun()
         st.stop()
 
-    col1, col2, col3, col4 = st.columns(4)
+    # 로그인 유형 선택 상태
+    if "login_type" not in st.session_state:
+        st.session_state.login_type = None
 
-    with col1:
+    if st.session_state.login_type is None:
+        # ── 유형 선택 화면 ──────────────────────────────────────────
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align:center;margin-bottom:32px;'>어떤 분이신가요?</h3>", unsafe_allow_html=True)
+
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
+            if st.button("🎒  학생이신가요?", use_container_width=True, key="sel_student"):
+                st.session_state.login_type = "student"
+                st.rerun()
+            if st.button("👩‍🏫  선생님이신가요?", use_container_width=True, key="sel_teacher"):
+                st.session_state.login_type = "teacher"
+                st.rerun()
+            if st.button("👨‍👩‍👧  학부모이신가요?", use_container_width=True, key="sel_parent"):
+                st.session_state.login_type = "parent"
+                st.rerun()
+            if st.button("🔑  통합 관리자이신가요?", use_container_width=True, key="sel_admin"):
+                st.session_state.login_type = "admin"
+                st.rerun()
+        st.stop()
+
+    # ── 선택된 유형 로그인 폼 ───────────────────────────────────────
+    if st.button("← 뒤로"):
+        st.session_state.login_type = None
+        st.rerun()
+
+    ltype = st.session_state.login_type
+
+    if ltype == "student":
         st.subheader("🎒 학생 로그인")
         with st.form("student_login"):
             s_name = st.text_input("이름", placeholder="홍길동")
@@ -364,7 +400,6 @@ if st.session_state.role is None:
                     conn = get_db()
                     row = conn.execute("SELECT * FROM students WHERE name=? AND student_code=?", (name, code)).fetchone()
                     if row:
-                        # 학년 자동 업데이트
                         if row["enrollment_year"] and row["base_grade"]:
                             new_g = calc_current_grade(row["base_grade"], row["enrollment_year"])
                             if new_g != row["grade"]:
@@ -375,12 +410,13 @@ if st.session_state.role is None:
                         st.session_state.role = "student"
                         st.session_state.student_id = row["id"]
                         st.session_state.student_info = dict(row)
+                        st.session_state.login_type = None
                         st.rerun()
                     else:
                         st.session_state.pending_register = {"name": name, "code": code}
                         st.rerun()
 
-    with col2:
+    elif ltype == "teacher":
         st.subheader("👩‍🏫 선생님 로그인")
         with st.form("teacher_login"):
             t_user = st.text_input("아이디", placeholder="teacher01")
@@ -394,26 +430,18 @@ if st.session_state.role is None:
                     st.session_state.role = "teacher"
                     st.session_state.teacher_id = row["id"]
                     st.session_state.teacher_info = dict(row)
+                    st.session_state.login_type = None
                     st.rerun()
                 else:
                     st.error("아이디 또는 비밀번호를 확인해주세요.")
 
-    with col3:
+    elif ltype == "parent":
         st.subheader("👨‍👩‍👧 학부모 로그인")
-        st.caption("아이디: 자녀 학번+p  |  비밀번호: 자녀 학번")
         with st.form("parent_login"):
-            p_user = st.text_input("아이디", placeholder="예) 284713p")
-            p_pw   = st.text_input("비밀번호", type="password", placeholder="예) 284713")
+            p_user = st.text_input("아이디", placeholder="예) 284713p  (자녀 학번+p)")
+            p_pw   = st.text_input("비밀번호", type="password", placeholder="예) 284713  (자녀 학번)")
             if st.form_submit_button("로그인", use_container_width=True, type="primary"):
                 conn = get_db()
-                # parents 테이블 없으면 자동 생성
-                conn.execute("""CREATE TABLE IF NOT EXISTS parents (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    parent_phone TEXT,
-                    created_at TEXT DEFAULT (datetime('now','localtime')))""")
-                conn.commit()
                 row = conn.execute(
                     "SELECT * FROM parents WHERE username=? AND password_hash=?",
                     (p_user.strip(), hash_pw(p_pw))).fetchone()
@@ -422,19 +450,19 @@ if st.session_state.role is None:
                     st.session_state.role = "parent"
                     st.session_state.parent_id = row["id"]
                     st.session_state.parent_info = dict(row)
+                    st.session_state.login_type = None
                     st.rerun()
                 else:
                     st.error("아이디 또는 비밀번호를 확인해주세요.")
 
-    with col4:
+    elif ltype == "admin":
         st.subheader("🔑 통합 관리자")
         with st.form("admin_login"):
             pw = st.text_input("관리자 비밀번호", type="password")
-            st.write("")  # 높이 맞춤
-            st.write("")  # 높이 맞춤
             if st.form_submit_button("로그인", use_container_width=True):
                 if pw == SUPER_ADMIN_PASSWORD:
                     st.session_state.role = "admin"
+                    st.session_state.login_type = None
                     st.rerun()
                 else:
                     st.error("비밀번호를 확인해주세요.")
@@ -1203,7 +1231,7 @@ elif st.session_state.role == "teacher":
             st.rerun()
 
     if page == "📊 현황":
-        st.subheader(f"📊 {tinfo['subject']} 현황")
+        st.subheader(f"📊 {tinfo['subject']} ({tinfo['name']}) 현황")
         conn = get_db()
         n_a = conn.execute("SELECT COUNT(*) FROM assignments WHERE teacher_id=?", (tid,)).fetchone()[0]
         n_s = conn.execute("SELECT COUNT(*) FROM submissions s JOIN assignments a ON s.assignment_id=a.id WHERE a.teacher_id=?", (tid,)).fetchone()[0]
@@ -1216,25 +1244,31 @@ elif st.session_state.role == "teacher":
         st.divider()
 
         # 반별 학생 현황
-        st.subheader("👥 반별 학생 현황")
         conn = get_db()
-        # 시간표에 배정된 반 기준으로 조회 (수업 배정 반영)
         assigned = conn.execute("""
             SELECT DISTINCT grade, class_name FROM timetable
             WHERE teacher_name=? ORDER BY grade, class_name
         """, (tinfo["name"],)).fetchall()
         conn.close()
 
-        if not assigned:
+        # 전체 인원 합산
+        total_students = 0
+        class_data = []
+        for row in assigned:
+            conn = get_db()
+            sts = conn.execute(
+                "SELECT * FROM students WHERE grade=? AND class_name=? ORDER BY name",
+                (row["grade"], row["class_name"])).fetchall()
+            conn.close()
+            total_students += len(sts)
+            class_data.append((row["grade"], row["class_name"], sts))
+
+        st.subheader(f"👥 반별 학생 현황  —  전체 {total_students}명")
+
+        if not class_data:
             st.info("시간표에 배정된 반이 없습니다. 관리자에게 시간표 등록을 요청하세요.")
         else:
-            for row in assigned:
-                grade, class_name = row["grade"], row["class_name"]
-                conn = get_db()
-                students = conn.execute(
-                    "SELECT * FROM students WHERE grade=? AND class_name=? ORDER BY name",
-                    (grade, class_name)).fetchall()
-                conn.close()
+            for grade, class_name, students in class_data:
                 with st.expander(f"📋 {grade} {class_name}  —  {len(students)}명"):
                     if not students:
                         st.info("등록된 학생이 없습니다.")
@@ -1781,7 +1815,7 @@ elif st.session_state.role == "admin":
     with st.sidebar:
         st.markdown("### 🔑 통합 관리자")
         st.divider()
-        page = st.radio("메뉴", ["📊 전체 현황","👩‍🏫 선생님 관리","👥 학생 관리","🗓 시간표 관리","📢 공지사항"])
+        page = st.radio("메뉴", ["📊 전체 현황","👩‍🏫 선생님 관리","👥 학생 관리","🏫 클래스 관리","🗓 시간표 관리","📢 공지사항"])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -1874,6 +1908,94 @@ elif st.session_state.role == "admin":
                             st.error("이미 존재하는 아이디입니다.")
                         finally:
                             conn.close()
+
+    elif page == "🏫 클래스 관리":
+        st.subheader("🏫 클래스 관리")
+        conn = get_db()
+        all_students_c = conn.execute("SELECT * FROM students ORDER BY grade, class_name, name").fetchall()
+        conn.close()
+
+        ctab1, ctab2 = st.tabs(["📋 반별 현황", "🔄 반 편성 변경"])
+
+        # ── 반별 현황 ──────────────────────────────────────────────
+        with ctab1:
+            # 반별로 그룹핑
+            class_map = {}
+            for s in all_students_c:
+                key = f"{s['grade']} {s['class_name']}" if s['class_name'] else f"{s['grade']} (미배정)"
+                class_map.setdefault(key, []).append(s)
+
+            if not class_map:
+                st.info("등록된 학생이 없습니다.")
+            else:
+                total = sum(len(v) for v in class_map.values())
+                st.caption(f"전체 {len(class_map)}개 반  ·  총 {total}명")
+                st.divider()
+                for cls_key in sorted(class_map.keys()):
+                    sts = class_map[cls_key]
+                    with st.expander(f"📋 {cls_key}  —  {len(sts)}명", expanded=False):
+                        cols = st.columns(5)
+                        for i, s in enumerate(sts):
+                            cur_g = calc_current_grade(s["base_grade"] or s["grade"], s["enrollment_year"]) if s["enrollment_year"] else s["grade"]
+                            cols[i % 5].markdown(f"• {s['name']}  `{cur_g}`")
+
+        # ── 반 편성 변경 ───────────────────────────────────────────
+        with ctab2:
+            st.markdown("#### 🔄 반 편성 일괄 변경")
+            st.caption("특정 반의 모든 학생을 새 반으로 이동하거나, 학년을 일괄 업데이트합니다.")
+
+            btab1, btab2 = st.tabs(["👥 반 전체 이동", "📅 학년 일괄 업데이트"])
+
+            with btab1:
+                st.markdown("**현재 반 → 새 반으로 전체 이동**")
+                # 현재 존재하는 반 목록
+                existing_classes = sorted(set(
+                    f"{s['grade']} {s['class_name']}" for s in all_students_c if s['class_name']
+                ))
+                if not existing_classes:
+                    st.info("편성된 반이 없습니다.")
+                else:
+                    with st.form("bulk_class_move"):
+                        bc1, bc2 = st.columns(2)
+                        from_class = bc1.selectbox("이동할 반 (현재)", existing_classes)
+                        new_grade_b  = bc2.selectbox("새 학년", GRADE_LIST)
+                        bc3, bc4 = st.columns(2)
+                        new_class_b  = bc3.selectbox("새 반", ["A반","B반","C반","D반","없음"])
+                        new_enroll_b = bc4.number_input("등록 연도 (변경 시)", min_value=2020,
+                            max_value=date.today().year, value=date.today().year, step=1)
+                        st.caption("💡 등록 연도를 변경하면 학년이 자동 재계산됩니다.")
+                        if st.form_submit_button("일괄 이동 ✅", type="primary", use_container_width=True):
+                            from_g, from_cn = from_class.split(" ", 1)
+                            new_cn = new_class_b if new_class_b != "없음" else ""
+                            new_cur_g = calc_current_grade(new_grade_b, new_enroll_b)
+                            conn = get_db()
+                            affected = conn.execute(
+                                "SELECT COUNT(*) FROM students WHERE grade=? AND class_name=?",
+                                (from_g, from_cn)).fetchone()[0]
+                            conn.execute(
+                                "UPDATE students SET grade=?, class_name=?, base_grade=?, enrollment_year=? WHERE grade=? AND class_name=?",
+                                (new_cur_g, new_cn, new_grade_b, int(new_enroll_b), from_g, from_cn))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"✅ {from_class} → {new_grade_b} {new_cn}  {affected}명 이동 완료!")
+                            st.rerun()
+
+            with btab2:
+                st.markdown("**특정 반 학년 일괄 업데이트**")
+                st.caption("등록 연도 기준으로 자동 계산된 학년을 DB에 반영합니다.")
+                if st.button("🔄 전체 학생 학년 자동 업데이트", type="primary", use_container_width=True):
+                    conn = get_db()
+                    updated = 0
+                    for s in all_students_c:
+                        if s["base_grade"] and s["enrollment_year"]:
+                            new_g = calc_current_grade(s["base_grade"], s["enrollment_year"])
+                            if new_g != s["grade"]:
+                                conn.execute("UPDATE students SET grade=? WHERE id=?", (new_g, s["id"]))
+                                updated += 1
+                    conn.commit()
+                    conn.close()
+                    st.success(f"✅ {updated}명의 학년이 업데이트되었습니다!")
+                    st.rerun()
 
     elif page == "🗓 시간표 관리":
         st.subheader("🗓 시간표 관리")
@@ -2175,6 +2297,98 @@ elif st.session_state.role == "admin":
 
     elif page == "👥 학생 관리":
         st.subheader("👥 학생 관리")
+
+        # ── 학생 상세 편집 페이지 ──────────────────────────────────
+        if st.session_state.admin_selected_student is not None:
+            conn = get_db()
+            sel_s_detail = conn.execute("SELECT * FROM students WHERE id=?",
+                (st.session_state.admin_selected_student,)).fetchone()
+            conn.close()
+            if sel_s_detail:
+                if st.button("← 목록으로 돌아가기"):
+                    st.session_state.admin_selected_student = None
+                    st.rerun()
+                st.divider()
+                cur_g_d = calc_current_grade(sel_s_detail["base_grade"] or sel_s_detail["grade"],
+                    sel_s_detail["enrollment_year"]) if sel_s_detail["enrollment_year"] else sel_s_detail["grade"]
+                st.markdown(f"### 👤 {sel_s_detail['name']}  `{sel_s_detail['student_code']}`")
+                st.caption(f"현재 학년: **{cur_g_d}** {sel_s_detail['class_name']}  |  학부모 아이디: **{sel_s_detail['student_code']}p**")
+                st.divider()
+
+                det1, det2, det3 = st.tabs(["📝 기본 정보", "📱 연락처", "🗑 삭제"])
+
+                with det1:
+                    with st.form("detail_basic"):
+                        d1, d2 = st.columns(2)
+                        dn = d1.text_input("이름", value=sel_s_detail["name"])
+                        ds = d2.text_input("학교", value=sel_s_detail["school"] or "")
+                        d3, d4 = st.columns(2)
+                        db_stored = sel_s_detail["base_grade"] or sel_s_detail["grade"] or GRADE_LIST[6]
+                        db_idx    = GRADE_ORDER.get(db_stored, 6)
+                        db_grade  = d3.selectbox("등록 당시 학년", GRADE_LIST, index=db_idx)
+                        dcl_list  = ["A반","B반","C반","D반","없음"]
+                        db_class  = d4.selectbox("반", dcl_list,
+                            index=dcl_list.index(sel_s_detail["class_name"]) if sel_s_detail["class_name"] in dcl_list else 4)
+                        db_enroll = st.number_input("등록 연도", min_value=2020, max_value=date.today().year,
+                            value=int(sel_s_detail["enrollment_year"] or date.today().year), step=1)
+                        dp = calc_current_grade(db_grade, db_enroll)
+                        st.caption(f"📌 현재 자동 계산 학년: **{dp}**")
+                        if st.form_submit_button("저장 ✅", type="primary", use_container_width=True):
+                            conn = get_db()
+                            conn.execute("UPDATE students SET name=?, school=?, base_grade=?, class_name=?, enrollment_year=?, grade=? WHERE id=?",
+                                (dn.strip(), ds.strip() or None, db_grade,
+                                 db_class if db_class != "없음" else "", int(db_enroll), dp,
+                                 sel_s_detail["id"]))
+                            conn.commit(); conn.close()
+                            st.success("✅ 저장되었습니다!")
+                            st.rerun()
+
+                with det2:
+                    with st.form("detail_contact"):
+                        e1, e2 = st.columns(2)
+                        dp_phone = e1.text_input("학생 전화번호", value=sel_s_detail["phone"] or "")
+                        srel = sel_s_detail["parent_name"] or ""
+                        rops = ["어머니","아버지","조모","조부","기타"]
+                        drel = next((r for r in rops if f"({r})" in srel), rops[0])
+                        dp_rel   = e2.selectbox("가족관계", rops, index=rops.index(drel))
+                        dp_pphone = st.text_input("학부모 전화번호", value=sel_s_detail["parent_phone"] or "")
+                        if st.form_submit_button("저장 ✅", type="primary", use_container_width=True):
+                            conn = get_db()
+                            conn.execute("UPDATE students SET phone=?, parent_name=?, parent_phone=? WHERE id=?",
+                                (dp_phone.strip(), f"{sel_s_detail['name']}({dp_rel})", dp_pphone.strip(), sel_s_detail["id"]))
+                            conn.commit(); conn.close()
+                            st.success("✅ 저장되었습니다!")
+                            st.rerun()
+
+                with det3:
+                    p_uname = str(sel_s_detail["student_code"]) + "p"
+                    st.info(f"📱 학부모 아이디: **{p_uname}**")
+                    if st.button("🔄 학부모 비밀번호 초기화 (→ 학번)", key="detail_pw_reset"):
+                        conn = get_db()
+                        conn.execute("UPDATE parents SET password_hash=? WHERE username=?",
+                            (hash_pw(str(sel_s_detail["student_code"])), p_uname))
+                        conn.commit(); conn.close()
+                        st.success(f"✅ 비밀번호가 학번으로 초기화되었습니다.")
+                    st.divider()
+                    st.warning(f"**{sel_s_detail['name']}** 학생을 삭제하면 모든 기록이 삭제됩니다.")
+                    del_confirm = st.text_input("삭제하려면 학생 이름을 정확히 입력하세요")
+                    if st.button("🗑 영구 삭제", type="primary", use_container_width=True):
+                        if del_confirm.strip() == sel_s_detail["name"]:
+                            conn = get_db()
+                            conn.execute("DELETE FROM student_teachers WHERE student_id=?", (sel_s_detail["id"],))
+                            conn.execute("DELETE FROM submissions WHERE student_id=?", (sel_s_detail["id"],))
+                            conn.execute("DELETE FROM parents WHERE username=?", (p_uname,))
+                            conn.execute("DELETE FROM students WHERE id=?", (sel_s_detail["id"],))
+                            conn.commit(); conn.close()
+                            st.session_state.admin_selected_student = None
+                            st.success(f"✅ {sel_s_detail['name']} 학생이 삭제되었습니다.")
+                            st.rerun()
+                        else:
+                            st.error("이름이 일치하지 않습니다.")
+                st.stop()
+            else:
+                st.session_state.admin_selected_student = None
+
         tab1, tab2, tab3, tab4 = st.tabs(["📋 학생 목록", "➕ 학생 등록", "🔍 학생 검색", "🏫 수업 배정"])
 
         # ── 학생 목록 ──────────────────────────────────────────────
@@ -2231,6 +2445,14 @@ elif st.session_state.role == "admin":
                 df = df[["name","student_code","current_grade","class_name","school","phone","parent_name","parent_phone","created_at"]]
                 df.columns = ["이름","학번","학년(현재)","반","학교","학생연락처","학부모","학부모연락처","등록일"]
                 st.dataframe(df, use_container_width=True, hide_index=True)
+
+                st.divider()
+                st.markdown("#### 학생을 선택해 수정하세요")
+                for s in students:
+                    cur_g = calc_current_grade(s["base_grade"] or s["grade"], s["enrollment_year"]) if s["enrollment_year"] else s["grade"]
+                    if st.button(f"✏️  {s['name']}  ({cur_g} {s['class_name']})", key=f"sel_stu_{s['id']}", use_container_width=True):
+                        st.session_state.admin_selected_student = s["id"]
+                        st.rerun()
 
         # ── 학생 등록 ──────────────────────────────────────────────
         with tab2:
