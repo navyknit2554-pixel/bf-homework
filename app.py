@@ -680,7 +680,7 @@ if st.session_state.role == "student":
                         col1, col2 = st.columns([1, 4])
                         col1.markdown(
                             f"<div style='background:#1e293b;border-left:3px solid #3b82f6;padding:10px 8px;border-radius:4px;text-align:center;'>"
-                            f"<b>{p}교시</b><br><span style='font-size:0.7rem;color:#64748b;'>{time_str}</span></div>",
+                            f"<span style='font-size:0.95rem;font-weight:bold;'>{p}교시</span><br><span style='font-size:0.78rem;color:#93c5fd;font-weight:500;'>{time_str}</span></div>",
                             unsafe_allow_html=True)
                         col2.markdown(
                             f"<div style='background:#1e3a5f;border-radius:8px;padding:10px 16px;'>"
@@ -788,7 +788,7 @@ if st.session_state.role == "student":
                         time_label = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
                         r_cols[0].markdown(
                             f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
-                            f"<b>{p}교시</b><br><span style='font-size:0.7rem;color:#64748b;'>{time_label}</span></div>",
+                            f"<span style='font-size:0.95rem;font-weight:bold;'>{p}교시</span><br><span style='font-size:0.78rem;color:#93c5fd;font-weight:500;'>{time_label}</span></div>",
                             unsafe_allow_html=True)
                     else:
                         r_cols[0].markdown(
@@ -967,7 +967,7 @@ elif st.session_state.role == "parent":
                         col1, col2 = st.columns([1, 4])
                         col1.markdown(
                             f"<div style='background:#1e293b;border-left:3px solid #3b82f6;padding:10px 8px;border-radius:4px;text-align:center;'>"
-                            f"<b>{p}교시</b><br><span style='font-size:0.7rem;color:#64748b;'>{time_str}</span></div>",
+                            f"<span style='font-size:0.95rem;font-weight:bold;'>{p}교시</span><br><span style='font-size:0.78rem;color:#93c5fd;font-weight:500;'>{time_str}</span></div>",
                             unsafe_allow_html=True)
                         col2.markdown(
                             f"<div style='background:#1e3a5f;border-radius:8px;padding:10px 16px;'>"
@@ -1136,7 +1136,7 @@ elif st.session_state.role == "parent":
                     tl = f"{pt2['start_time']}~{pt2['end_time']}" if pt2["end_time"] else pt2["start_time"]
                     r_cols[0].markdown(
                         f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
-                        f"<b>{p}교시</b><br><span style='font-size:0.7rem;color:#64748b;'>{tl}</span></div>",
+                        f"<span style='font-size:0.95rem;font-weight:bold;'>{p}교시</span><br><span style='font-size:0.78rem;color:#93c5fd;font-weight:500;'>{tl}</span></div>",
                         unsafe_allow_html=True)
                 else:
                     r_cols[0].markdown(
@@ -1287,7 +1287,7 @@ elif st.session_state.role == "teacher":
                     time_label = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
                     r_cols[0].markdown(
                         f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
-                        f"<b>{p}교시</b><br><span style='font-size:0.7rem;color:#64748b;'>{time_label}</span></div>",
+                        f"<span style='font-size:0.95rem;font-weight:bold;'>{p}교시</span><br><span style='font-size:0.78rem;color:#93c5fd;font-weight:500;'>{time_label}</span></div>",
                         unsafe_allow_html=True)
                 else:
                     r_cols[0].markdown(
