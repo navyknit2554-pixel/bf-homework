@@ -9,8 +9,8 @@ import re
 import requests
 
 st.set_page_config(
-    page_title="모두의 학습 관리",
-    page_icon="✏️",
+    page_title="패스파인더 과제 관리",
+    page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -162,7 +162,7 @@ def send_aligo_sms(receivers: list, message: str, sender: str = None) -> dict:
             "receiver": ",".join(cleaned),
             "msg":      message,
             "msg_type": "SMS" if len(message) <= 90 else "LMS",
-            "title":    "모두의 학습 관리" if len(message) > 90 else "",
+            "title":    "패스파인더 국어학원" if len(message) > 90 else "",
         }, timeout=10)
         return resp.json()
     except Exception as e:
@@ -387,16 +387,51 @@ import streamlit.components.v1 as _components
 _components.html("""
 <script>
 (function() {
+    var doc = window.parent.document;
+
+    // ── 사이드바 메뉴 클릭 시 모바일 자동 닫기 ──
     function closeSidebar() {
         try {
-            var btn = window.parent.document.querySelector('[data-testid="stSidebarCollapseButton"]');
+            var btn = doc.querySelector('[data-testid="stSidebarCollapseButton"]');
             if (btn && window.parent.innerWidth < 768) btn.click();
         } catch(e) {}
     }
-    window.parent.document.addEventListener('click', function(e) {
+    doc.addEventListener('click', function(e) {
         var label = e.target.closest('div[data-testid="stRadio"] label');
         if (label) setTimeout(closeSidebar, 200);
     }, true);
+
+    // ── 개발자 도구 방지 ──
+    // 우클릭 비활성화
+    doc.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+    // F12, Ctrl+Shift+I/J/C/U, Ctrl+U 차단
+    doc.addEventListener('keydown', function(e) {
+        if (
+            e.key === 'F12' ||
+            (e.ctrlKey && e.shiftKey && ['I','J','C','i','j','c'].includes(e.key)) ||
+            (e.ctrlKey && ['U','u'].includes(e.key))
+        ) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }
+    }, true);
+
+    // 개발자 도구 열림 감지 → 경고
+    var devOpen = false;
+    setInterval(function() {
+        var threshold = 160;
+        var widthDiff  = window.parent.outerWidth  - window.parent.innerWidth  > threshold;
+        var heightDiff = window.parent.outerHeight - window.parent.innerHeight > threshold;
+        if ((widthDiff || heightDiff) && !devOpen) {
+            devOpen = true;
+            window.parent.document.body.style.filter = 'blur(8px)';
+        } else if (!widthDiff && !heightDiff && devOpen) {
+            devOpen = false;
+            window.parent.document.body.style.filter = '';
+        }
+    }, 1000);
 })();
 </script>
 """, height=0)
@@ -1428,53 +1463,48 @@ elif st.session_state.role == "teacher":
             st.divider()
             with st.expander(f"📱 미제출 학생 알림 ({len(missing)}명)"):
                 due_str = sel_a["due_date"] or "미정"
-                default_tmpl = f"[모두의 학습 관리] {{name}} 학생, 📚 {sel_a['title']} 과제(마감: {due_str})가 아직 제출되지 않았습니다. 빠른 제출 부탁드립니다!"
+                default_tmpl = f"[패스파인더 국어학원] {{name}} 학생, 📚 {sel_a['title']} 과제(마감: {due_str})가 아직 제출되지 않았습니다. 빠른 제출 부탁드립니다!"
                 tmpl = st.text_area("메시지 템플릿 ({name} 은 학생 이름으로 자동 치환)", value=default_tmpl, height=100)
                 st.divider()
 
                 import urllib.parse
-                def get_contact(s):
-                    return s["parent_phone"] or s["phone"] or ""
-                def get_contact_label(s):
-                    p = s["parent_phone"]
-                    if p: return f"{s['parent_name'] or '학부모'} {p}"
-                    if s["phone"]: return f"학생 {s['phone']}"
-                    return ""
 
-                has_phone = [s for s in missing if get_contact(s)]
-                no_phone  = [s for s in missing if not get_contact(s)]
-
+                no_phone = [s for s in missing if not s["phone"] and not s["parent_phone"]]
                 if no_phone:
                     st.warning(f"연락처 미등록 {len(no_phone)}명: {', '.join([s['name'] for s in no_phone])}")
 
-                # ── 일괄 문자 전송 (알리고) ────────────────────────────────
-                # ── 문자 발송 ──────────────────────────────────────────
                 st.markdown("**📱 문자 발송**")
-                for s in missing:
-                    phone    = get_contact(s)
-                    msg_text = tmpl.replace("{name}", s["name"])
-                    c1, c2, c3 = st.columns([2, 3, 3])
-                    c1.markdown(f"**{s['name']}** ({s['grade']} {s['class_name']})")
-                    if phone:
-                        c2.markdown(f"📞 `{get_contact_label(s)}`")
-                        encoded  = urllib.parse.quote(msg_text)
-                        sms_link = f"sms:{phone}?body={encoded}"
-                        btn_html = f"""<div style="display:flex;gap:6px;flex-wrap:wrap;">
-  <button onclick="navigator.clipboard.writeText({repr(msg_text)}).then(()=>{{this.innerText='✅ 복사됨';setTimeout(()=>this.innerText='📋 복사',2000)}})"
-    style="background:#4f86f7;color:white;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.8rem;">📋 복사</button>
-  <a href="{sms_link}" target="_blank"><button
-    style="background:#4CAF50;color:white;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.8rem;">📱 문자</button></a>
+
+                def sms_btn(label, phone, msg, btn_key):
+                    encoded  = urllib.parse.quote(msg)
+                    sms_link = f"sms:{phone}?body={encoded}"
+                    btn_style = "display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:0.82rem;text-decoration:none;"
+                    return f"""<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+  <button onclick="navigator.clipboard.writeText({repr(msg)}).then(()=>{{this.innerText='✅ 복사됨';setTimeout(()=>this.innerText='📋 복사',2000)}})"
+    style="{btn_style}background:#3b5bdb;color:white;">📋 복사</button>
+  <a href="{sms_link}" target="_blank" style="text-decoration:none;">
+    <span style="{btn_style}background:#2f9e44;color:white;display:inline-flex;">📱 {label}</span>
+  </a>
 </div>"""
-                        c3.markdown(btn_html, unsafe_allow_html=True)
-                        if st.button("📤 알리고 자동전송", key=f"singleSend_{s['id']}"):
-                            result = send_aligo_sms([get_contact(s)], msg_text)
-                            if str(result.get("result_code")) == "1":
-                                st.success(f"✅ {s['name']} 전송 완료!")
-                            else:
-                                st.error(f"전송 실패: {result.get('message','오류')}")
-                    else:
-                        c2.caption("연락처 미등록")
-                    st.divider()
+
+                for s in missing:
+                    msg_text = tmpl.replace("{name}", s["name"])
+                    with st.container(border=True):
+                        st.markdown(f"**{s['name']}**  `{s['grade']} {s['class_name']}`")
+                        has_student = bool(s["phone"])
+                        has_parent  = bool(s["parent_phone"])
+
+                        if has_student:
+                            st.caption(f"학생  📞 {s['phone']}")
+                            st.markdown(sms_btn("학생에게 문자", s["phone"], msg_text, f"s_{s['id']}"), unsafe_allow_html=True)
+
+                        if has_parent:
+                            pname = s["parent_name"] or "학부모"
+                            st.caption(f"{pname}  📞 {s['parent_phone']}")
+                            st.markdown(sms_btn(f"{pname}께 문자", s["parent_phone"], msg_text, f"p_{s['id']}"), unsafe_allow_html=True)
+
+                        if not has_student and not has_parent:
+                            st.caption("⚠️ 연락처 미등록")
 
         st.divider()
         for s in all_students:
@@ -2386,7 +2416,7 @@ elif st.session_state.role == "admin":
             with st.form("admin_add_student"):
                 col1, col2 = st.columns(2)
                 new_name   = col1.text_input("이름 *", placeholder="홍길동")
-                new_school = col2.text_input("학교", placeholder="◇◇중학교")
+                new_school = col2.text_input("학교", placeholder="패스파인더중학교")
                 col3, col4 = st.columns(2)
                 new_grade  = col3.selectbox("학년 *", GRADE_LIST)
                 new_class  = col4.selectbox("반 *", ["A반","B반","C반","D반","없음"])
