@@ -168,6 +168,13 @@ def init_db():
         "ALTER TABLE students ADD COLUMN school TEXT",
         "ALTER TABLE students ADD COLUMN enrollment_year INTEGER",
         "ALTER TABLE students ADD COLUMN base_grade TEXT",
+        """CREATE TABLE IF NOT EXISTS student_teachers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            teacher_id INTEGER NOT NULL,
+            subject TEXT,
+            UNIQUE(student_id, teacher_id)
+        )""",
         """CREATE TABLE IF NOT EXISTS period_times (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             grade TEXT NOT NULL,
@@ -1691,6 +1698,8 @@ elif st.session_state.role == "admin":
                 conn = get_db()
                 all_students = conn.execute(
                     "SELECT * FROM students ORDER BY grade, class_name, name").fetchall()
+                all_teachers = conn.execute(
+                    "SELECT * FROM teachers ORDER BY subject, name").fetchall()
                 conn.close()
 
                 if not all_students:
@@ -1700,10 +1709,22 @@ elif st.session_state.role == "admin":
                     sel_name = st.selectbox("학생 선택", list(s_opts.keys()), key="assign_sel")
                     sel_s = s_opts[sel_name]
 
-                    # 현재 배정 정보 표시
+                    # 현재 배정 정보
+                    conn = get_db()
+                    cur_teachers = conn.execute("""
+                        SELECT st.teacher_id, t.name, t.subject FROM student_teachers st
+                        JOIN teachers t ON st.teacher_id=t.id
+                        WHERE st.student_id=?
+                    """, (sel_s["id"],)).fetchall()
+                    conn.close()
+                    cur_teacher_ids = {r["teacher_id"] for r in cur_teachers}
+
                     st.markdown(f"**현재:** {sel_s['grade']} {sel_s['class_name']}  |  학교: {sel_s['school'] or '미등록'}")
+                    if cur_teachers:
+                        st.markdown("**담당 선생님:** " + "  ·  ".join([f"{r['subject']} {r['name']}" for r in cur_teachers]))
                     st.divider()
 
+                    # 학년/반/학교
                     col1, col2, col3 = st.columns(3)
                     cur_grade_idx = GRADE_LIST.index(sel_s["grade"]) if sel_s["grade"] in GRADE_LIST else 6
                     new_grade_a  = col1.selectbox("학년", GRADE_LIST, index=cur_grade_idx, key="assign_grade")
@@ -1712,6 +1733,31 @@ elif st.session_state.role == "admin":
                     new_class_a  = col2.selectbox("반", class_list, index=class_list.index(cur_class), key="assign_class")
                     new_school_a = col3.text_input("학교", value=sel_s["school"] or "", key="assign_school")
 
+                    st.divider()
+                    st.markdown("**👩‍🏫 담당 선생님 배정**")
+                    st.caption("담당할 선생님을 선택하세요. 체크 해제 시 배정 해제됩니다.")
+
+                    selected_tids = []
+                    if all_teachers:
+                        # 과목별 그룹화
+                        from itertools import groupby
+                        subject_groups = {}
+                        for t in all_teachers:
+                            subject_groups.setdefault(t["subject"], []).append(t)
+                        for subj, tlist in subject_groups.items():
+                            st.markdown(f"*{subj}*")
+                            tcols = st.columns(min(len(tlist), 4))
+                            for i, t in enumerate(tlist):
+                                checked = tcols[i % 4].checkbox(
+                                    t["name"],
+                                    value=(t["id"] in cur_teacher_ids),
+                                    key=f"assign_t_{sel_s['id']}_{t['id']}"
+                                )
+                                if checked:
+                                    selected_tids.append(t["id"])
+                    else:
+                        st.info("등록된 선생님이 없습니다.")
+
                     if st.button("배정 저장 ✅", type="primary", use_container_width=True, key="assign_save"):
                         conn = get_db()
                         conn.execute(
@@ -1719,30 +1765,38 @@ elif st.session_state.role == "admin":
                             (new_grade_a,
                              new_class_a if new_class_a != "없음" else "",
                              new_school_a.strip() or None,
-                             new_grade_a,  # base_grade도 함께 업데이트
+                             new_grade_a,
                              sel_s["id"]))
+                        # 선생님 배정 갱신
+                        conn.execute("DELETE FROM student_teachers WHERE student_id=?", (sel_s["id"],))
+                        for tid_a in selected_tids:
+                            t_info = next(t for t in all_teachers if t["id"] == tid_a)
+                            conn.execute(
+                                "INSERT OR IGNORE INTO student_teachers (student_id, teacher_id, subject) VALUES (?,?,?)",
+                                (sel_s["id"], tid_a, t_info["subject"]))
                         conn.commit()
                         conn.close()
-                        st.success(f"✅ {sel_s['name']} → {new_grade_a} {new_class_a} 배정 완료!")
+                        t_names = ", ".join([t["name"] for t in all_teachers if t["id"] in selected_tids])
+                        st.success(f"✅ {sel_s['name']} → {new_grade_a} {new_class_a}  |  선생님: {t_names or '없음'}")
                         st.rerun()
 
             # ── 반 일괄 배정 ──────────────────────────────────────
             with assign_tab2:
-                st.caption("특정 학년·반 전체 학생을 다른 반으로 한 번에 이동합니다.")
+                st.caption("특정 학년·반 전체 학생을 다른 반으로 이동하고 선생님을 일괄 배정합니다.")
                 conn = get_db()
                 grade_class_list = conn.execute(
                     "SELECT DISTINCT grade, class_name FROM students ORDER BY grade, class_name").fetchall()
+                all_teachers_b = conn.execute(
+                    "SELECT * FROM teachers ORDER BY subject, name").fetchall()
                 conn.close()
 
                 if not grade_class_list:
                     st.info("등록된 학생이 없습니다.")
                 else:
                     gc_opts = [f"{r['grade']} {r['class_name']}" for r in grade_class_list]
-                    col1, col2 = st.columns(2)
-                    src = col1.selectbox("이동할 반 (현재)", gc_opts, key="bulk_src")
+                    src = st.selectbox("대상 반 선택", gc_opts, key="bulk_src")
                     src_grade, src_class = src.split(" ", 1)
 
-                    # 해당 반 학생 미리보기
                     conn = get_db()
                     src_students = conn.execute(
                         "SELECT * FROM students WHERE grade=? AND class_name=? ORDER BY name",
@@ -1751,20 +1805,52 @@ elif st.session_state.role == "admin":
                     st.markdown(f"**{src} 학생 {len(src_students)}명:** {', '.join([s['name'] for s in src_students])}")
                     st.divider()
 
-                    col3, col4 = st.columns(2)
-                    dst_grade = col3.selectbox("이동할 학년", GRADE_LIST, key="bulk_dst_grade")
-                    dst_class = col4.selectbox("이동할 반", ["A반","B반","C반","D반","없음"], key="bulk_dst_class")
+                    # 학년/반 이동
+                    st.markdown("**📋 학년/반 변경** (선택 사항)")
+                    col1, col2 = st.columns(2)
+                    cur_g_idx = GRADE_LIST.index(src_grade) if src_grade in GRADE_LIST else 6
+                    dst_grade = col1.selectbox("학년", GRADE_LIST, index=cur_g_idx, key="bulk_dst_grade")
+                    dst_class = col2.selectbox("반", ["A반","B반","C반","D반","없음"],
+                        index=["A반","B반","C반","D반","없음"].index(src_class) if src_class in ["A반","B반","C반","D반"] else 4,
+                        key="bulk_dst_class")
 
-                    if st.button(f"🚀 {len(src_students)}명 일괄 이동", type="primary", use_container_width=True, key="bulk_move"):
-                        if src == f"{dst_grade} {dst_class}":
-                            st.warning("현재와 동일한 반입니다.")
-                        else:
-                            conn = get_db()
-                            conn.execute(
-                                "UPDATE students SET grade=?, class_name=?, base_grade=? WHERE grade=? AND class_name=?",
-                                (dst_grade, dst_class if dst_class != "없음" else "",
-                                 dst_grade, src_grade, src_class))
-                            conn.commit()
-                            conn.close()
-                            st.success(f"✅ {src} → {dst_grade} {dst_class}  {len(src_students)}명 이동 완료!")
-                            st.rerun()
+                    st.divider()
+                    st.markdown("**👩‍🏫 담당 선생님 일괄 배정** (선택 사항)")
+                    st.caption("체크한 선생님이 이 반 전체 학생에게 배정됩니다.")
+
+                    bulk_tids = []
+                    if all_teachers_b:
+                        subject_groups_b = {}
+                        for t in all_teachers_b:
+                            subject_groups_b.setdefault(t["subject"], []).append(t)
+                        for subj, tlist in subject_groups_b.items():
+                            st.markdown(f"*{subj}*")
+                            tcols = st.columns(min(len(tlist), 4))
+                            for i, t in enumerate(tlist):
+                                checked = tcols[i % 4].checkbox(t["name"], key=f"bulk_t_{t['id']}")
+                                if checked:
+                                    bulk_tids.append(t["id"])
+                    else:
+                        st.info("등록된 선생님이 없습니다.")
+
+                    if st.button(f"🚀 {len(src_students)}명 일괄 적용", type="primary", use_container_width=True, key="bulk_move"):
+                        conn = get_db()
+                        conn.execute(
+                            "UPDATE students SET grade=?, class_name=?, base_grade=? WHERE grade=? AND class_name=?",
+                            (dst_grade, dst_class if dst_class != "없음" else "",
+                             dst_grade, src_grade, src_class))
+                        # 선생님 일괄 배정
+                        if bulk_tids:
+                            for s in src_students:
+                                conn.execute("DELETE FROM student_teachers WHERE student_id=?", (s["id"],))
+                                for tid_b in bulk_tids:
+                                    t_info = next(t for t in all_teachers_b if t["id"] == tid_b)
+                                    conn.execute(
+                                        "INSERT OR IGNORE INTO student_teachers (student_id, teacher_id, subject) VALUES (?,?,?)",
+                                        (s["id"], tid_b, t_info["subject"]))
+                        conn.commit()
+                        conn.close()
+                        t_names_b = ", ".join([t["name"] for t in all_teachers_b if t["id"] in bulk_tids])
+                        st.success(f"✅ {src} → {dst_grade} {dst_class}  {len(src_students)}명 완료!" +
+                                   (f"  선생님: {t_names_b}" if t_names_b else ""))
+                        st.rerun()
