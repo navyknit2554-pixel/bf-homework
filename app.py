@@ -123,6 +123,7 @@ def init_db():
         "ALTER TABLE videos ADD COLUMN teacher_id INTEGER",
         "ALTER TABLE assignments ADD COLUMN teacher_id INTEGER",
         "ALTER TABLE questions ADD COLUMN image_paths TEXT",
+        "ALTER TABLE students ADD COLUMN phone TEXT",
         """CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER NOT NULL,
@@ -629,6 +630,47 @@ elif st.session_state.role == "teacher":
         c2.metric("제출 완료", done)
         c3.metric("제출률", f"{pct}%")
         st.progress(pct/100)
+
+        # 미제출 학생 카카오톡 알림
+        missing = [s for s in all_students if s["id"] not in sub_map]
+        if missing:
+            st.divider()
+            with st.expander(f"📱 미제출 학생 카카오톡 알림 ({len(missing)}명)"):
+                due_str = sel_a["due_date"] or "미정"
+
+                # 메시지 템플릿 커스터마이즈
+                default_tmpl = f"[패스파인더 국어학원] {{name}} 학생, 📚 {sel_a['title']} 과제(마감: {due_str})가 아직 제출되지 않았습니다. 빠른 제출 부탁드립니다!"
+                tmpl = st.text_area("메시지 템플릿 ({name} 은 학생 이름으로 자동 치환)", value=default_tmpl, height=100)
+                st.divider()
+
+                # 학생별 카카오톡 링크 생성
+                for s in missing:
+                    phone = (s["phone"] or "").replace("-", "").strip()
+                    msg_text = tmpl.replace("{name}", s["name"])
+
+                    col1, col2, col3 = st.columns([2, 2, 3])
+                    col1.markdown(f"**{s['name']}** ({s['grade']} {s['class_name']})")
+
+                    if phone:
+                        import urllib.parse
+                        encoded = urllib.parse.quote(msg_text)
+                        # 카카오톡 앱 링크 (모바일) / 웹 링크 (PC)
+                        kakao_link = f"https://open.kakao.com/o/sRuleEdd"  # 플레이스홀더
+                        sms_link   = f"sms:{phone}?body={encoded}"
+                        col2.markdown(f"📞 `{s['phone']}`")
+                        col3.markdown(
+                            f'<a href="{sms_link}" target="_blank">'
+                            f'<button style="background:#FEE500;color:#3C1E1E;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:bold;">💬 카카오톡 전송</button></a>',
+                            unsafe_allow_html=True
+                        )
+                    else:
+                        col2.caption("연락처 미등록")
+                        col3.caption("👉 관리자 페이지에서 연락처 등록 필요")
+
+                    # 메시지 미리보기
+                    with st.expander(f"  메시지 미리보기 — {s['name']}", expanded=False):
+                        st.info(msg_text)
+
         st.divider()
         for s in all_students:
             sub = sub_map.get(s["id"])
@@ -925,9 +967,24 @@ elif st.session_state.role == "admin":
             import pandas as pd
             if students:
                 df = pd.DataFrame([dict(s) for s in students])
-                df = df[["name","student_code","grade","class_name","created_at"]]
-                df.columns = ["이름","학번","학년","반","등록일"]
+                df["phone"] = df.get("phone", "")
+                df = df[["name","student_code","grade","class_name","phone","created_at"]]
+                df.columns = ["이름","학번","학년","반","연락처","등록일"]
                 st.dataframe(df, use_container_width=True, hide_index=True)
+                st.divider()
+                st.markdown("#### 📱 연락처 등록/수정")
+                s_options = {f"{s['name']} ({s['grade']} {s['class_name']})": s["id"] for s in students}
+                sel_s = st.selectbox("학생 선택", list(s_options.keys()), key="phone_student")
+                sel_id = s_options[sel_s]
+                sel_info = next(s for s in students if s["id"] == sel_id)
+                new_phone = st.text_input("연락처 (학부모 포함)", value=sel_info["phone"] or "", placeholder="010-0000-0000")
+                if st.button("연락처 저장 ✅", type="primary"):
+                    conn = get_db()
+                    conn.execute("UPDATE students SET phone=? WHERE id=?", (new_phone.strip(), sel_id))
+                    conn.commit()
+                    conn.close()
+                    st.success("연락처가 저장되었습니다!")
+                    st.rerun()
             else:
                 st.info("등록된 학생이 없습니다.")
         with tab2:
