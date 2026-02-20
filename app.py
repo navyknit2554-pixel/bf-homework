@@ -168,6 +168,16 @@ def init_db():
         "ALTER TABLE students ADD COLUMN school TEXT",
         "ALTER TABLE students ADD COLUMN enrollment_year INTEGER",
         "ALTER TABLE students ADD COLUMN base_grade TEXT",
+        """CREATE TABLE IF NOT EXISTS notices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            notice_type TEXT NOT NULL,
+            teacher_id INTEGER,
+            grade TEXT,
+            class_name TEXT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        )""",
         """CREATE TABLE IF NOT EXISTS student_teachers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER NOT NULL,
@@ -374,7 +384,7 @@ if st.session_state.role == "student":
         st.markdown(f"### 👋 {info['name']} 학생")
         st.caption(f"{info['grade']} {info['class_name']} · {info['student_code']}")
         st.divider()
-        page = st.radio("메뉴", ["📋 내 과제 목록","✅ 제출 완료 목록","🎬 강의 영상","💬 질문하기","🗓 시간표"])
+        page = st.radio("메뉴", ["🏠 홈","📋 내 과제 목록","✅ 제출 완료 목록","🎬 강의 영상","💬 질문하기","🗓 시간표"])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -563,9 +573,99 @@ if st.session_state.role == "student":
                         else:
                             st.caption("아직 답변이 등록되지 않았습니다.")
 
+    elif page == "🏠 홈":
+        from datetime import datetime as dt_now
+        today = dt_now.now()
+        day_kr = ["월","화","수","목","금","토","일"][today.weekday()]
+        DAYS_KR = ["월","화","수","목","금"]
+        PERIODS_H = [1,2,3,4]
+
+        st.subheader(f"🏠 안녕하세요, {info['name']} 학생!")
+        st.caption(f"📅 {today.year}년 {today.month}월 {today.day}일 ({day_kr}요일)")
+        st.divider()
+
+        # ── 오늘의 수업 ──────────────────────────────────────
+        st.markdown("#### 📚 오늘의 수업")
+        if day_kr not in DAYS_KR:
+            st.info("오늘은 주말입니다. 즐거운 휴일 보내세요! 🎉")
+        else:
+            conn = get_db()
+            today_tt = conn.execute(
+                "SELECT * FROM timetable WHERE grade=? AND class_name=? AND day=? ORDER BY period",
+                (info["grade"], info["class_name"], day_kr)).fetchall()
+            pt_today = conn.execute(
+                "SELECT * FROM period_times WHERE grade='공통' AND class_name='공통' ORDER BY period"
+            ).fetchall()
+            conn.close()
+            pt_map_h = {r["period"]: r for r in pt_today}
+            tt_today = {r["period"]: r for r in today_tt}
+
+            if not today_tt:
+                st.info("오늘 등록된 수업이 없습니다.")
+            else:
+                for p in PERIODS_H:
+                    cell = tt_today.get(p)
+                    pt   = pt_map_h.get(p)
+                    time_str = ""
+                    if pt and pt["start_time"]:
+                        time_str = f"{pt['start_time']} ~ {pt['end_time']}" if pt["end_time"] else pt["start_time"]
+                    if cell and cell["subject"]:
+                        col1, col2 = st.columns([1, 4])
+                        col1.markdown(
+                            f"<div style='background:#1e293b;border-left:3px solid #3b82f6;padding:10px 8px;border-radius:4px;text-align:center;'>"
+                            f"<b>{p}교시</b><br><span style='font-size:0.7rem;color:#64748b;'>{time_str}</span></div>",
+                            unsafe_allow_html=True)
+                        col2.markdown(
+                            f"<div style='background:#1e3a5f;border-radius:8px;padding:10px 16px;'>"
+                            f"<span style='font-size:1rem;font-weight:bold;'>{cell['subject']}</span>"
+                            f"<span style='color:#94a3b8;font-size:0.85rem;margin-left:12px;'>{cell['teacher_name'] or ''} 선생님</span>"
+                            f"</div>", unsafe_allow_html=True)
+                        st.markdown("")
+        st.divider()
+
+        # ── 공지사항 ──────────────────────────────────────────
+        st.markdown("#### 📢 공지사항")
+
+        conn = get_db()
+        # 전체 공지 (학원 공지)
+        global_notices = conn.execute(
+            "SELECT * FROM notices WHERE notice_type='global' ORDER BY created_at DESC LIMIT 10"
+        ).fetchall()
+        # 과목 선생님 공지 (본인 반 + 해당 선생님)
+        subject_notices = conn.execute("""
+            SELECT n.*, t.name as teacher_name_real, t.subject as teacher_subject
+            FROM notices n
+            LEFT JOIN teachers t ON n.teacher_id = t.id
+            WHERE n.notice_type='subject'
+              AND n.grade=? AND n.class_name=?
+            ORDER BY n.created_at DESC LIMIT 20
+        """, (info["grade"], info["class_name"])).fetchall()
+        conn.close()
+
+        ntab1, ntab2 = st.tabs([f"📣 학원 공지 ({len(global_notices)})", f"📘 과목별 공지 ({len(subject_notices)})"])
+
+        with ntab1:
+            if not global_notices:
+                st.info("학원 공지사항이 없습니다.")
+            else:
+                for n in global_notices:
+                    with st.expander(f"📣 {n['title']}  —  {n['created_at'][:10]}"):
+                        st.write(n["content"])
+
+        with ntab2:
+            if not subject_notices:
+                st.info("과목별 공지사항이 없습니다.")
+            else:
+                for n in subject_notices:
+                    label = n["teacher_subject"] or ""
+                    tname = n["teacher_name_real"] or ""
+                    with st.expander(f"📘 [{label}] {n['title']}  —  {tname} 선생님  {n['created_at'][:10]}"):
+                        st.write(n["content"])
+
     elif page == "🗓 시간표":
         st.subheader(f"🗓 시간표  —  {info['grade']} {info['class_name']}")
         DAYS    = ["월","화","수","목","금"]
+        PERIODS_S = [1,2,3,4]
         tab_tt, tab_sch = st.tabs(["📋 주간 시간표", "📅 날짜별 일정"])
 
         # ── 주간 시간표 탭 ──
@@ -574,17 +674,15 @@ if st.session_state.role == "student":
             rows = conn.execute(
                 "SELECT * FROM timetable WHERE grade=? AND class_name=?",
                 (info["grade"], info["class_name"])).fetchall()
+            pt_rows_s = conn.execute(
+                "SELECT * FROM period_times WHERE grade='공통' AND class_name='공통' ORDER BY period"
+            ).fetchall()
             conn.close()
+
             if not rows:
                 st.info("아직 등록된 시간표가 없습니다.")
             else:
                 tt = {(r["day"], r["period"]): r for r in rows}
-                max_p = max((r["period"] for r in rows), default=6)
-                conn = get_db()
-                pt_rows_s = conn.execute(
-                    "SELECT * FROM period_times WHERE grade='공통' AND class_name='공통' ORDER BY period"
-                ).fetchall()
-                conn.close()
                 pt_map_s = {r["period"]: r for r in pt_rows_s}
 
                 h_cols = st.columns([1]+[2]*len(DAYS))
@@ -592,7 +690,7 @@ if st.session_state.role == "student":
                 for i, d in enumerate(DAYS):
                     h_cols[i+1].markdown(f"**{d}요일**")
                 st.divider()
-                for p in range(1, max_p+1):
+                for p in PERIODS_S:
                     st.markdown("<hr style='margin:2px 0;border:none;border-top:1px solid #1e293b;'>", unsafe_allow_html=True)
                     r_cols = st.columns([1]+[2]*len(DAYS))
                     pt = pt_map_s.get(p)
@@ -600,12 +698,12 @@ if st.session_state.role == "student":
                     if pt and pt["start_time"]:
                         time_label = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
                         r_cols[0].markdown(
-                            f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px 8px;border-radius:4px;'>"
+                            f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
                             f"<b>{p}교시</b><br><span style='font-size:0.7rem;color:#64748b;'>{time_label}</span></div>",
                             unsafe_allow_html=True)
                     else:
                         r_cols[0].markdown(
-                            f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px 8px;border-radius:4px;'>"
+                            f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
                             f"<b>{p}교시</b></div>", unsafe_allow_html=True)
                     for i, d in enumerate(DAYS):
                         cell = tt.get((d, p))
@@ -707,7 +805,7 @@ elif st.session_state.role == "teacher":
         unanswered = conn.execute("SELECT COUNT(*) FROM questions WHERE teacher_id=? AND is_answered=0", (tid,)).fetchone()[0]
         conn.close()
         q_label = f"💬 질문 관리  🔴{unanswered}" if unanswered else "💬 질문 관리"
-        page = st.radio("메뉴", ["📊 현황","📝 과제 등록","📋 과제 관리","🔍 제출 현황","🎬 영상 관리", q_label])
+        page = st.radio("메뉴", ["📊 현황","📝 과제 등록","📋 과제 관리","🔍 제출 현황","🎬 영상 관리", q_label, "📢 공지사항"])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -1233,6 +1331,61 @@ elif st.session_state.role == "teacher":
                                             conn.close()
                                             st.rerun()
 
+    elif page == "📢 공지사항":
+        st.subheader("📢 과목별 공지사항")
+        tid_n = st.session_state.teacher_id
+        conn = get_db()
+        tinfo_n = conn.execute("SELECT * FROM teachers WHERE id=?", (tid_n,)).fetchone()
+        # 이 선생님이 담당하는 반 목록
+        assigned_n = conn.execute(
+            "SELECT DISTINCT grade, class_name FROM timetable WHERE teacher_name=? ORDER BY grade, class_name",
+            (tinfo_n["name"],)).fetchall()
+        conn.close()
+
+        ntab_w, ntab_l = st.tabs(["✏️ 공지 작성", "📋 내 공지 목록"])
+
+        with ntab_w:
+            if not assigned_n:
+                st.info("시간표에 배정된 반이 없습니다. 먼저 시간표를 등록해주세요.")
+            else:
+                cls_opts = [f"{r['grade']} {r['class_name']}" for r in assigned_n]
+                with st.form("teacher_notice_form"):
+                    sel_cls_n = st.selectbox("공지할 반 *", cls_opts)
+                    n_title   = st.text_input("제목 *", placeholder="예) 다음 수업 준비물 안내")
+                    n_content = st.text_area("내용 *", height=150)
+                    if st.form_submit_button("공지 등록 ✅", type="primary", use_container_width=True):
+                        if not n_title.strip() or not n_content.strip():
+                            st.error("제목과 내용을 모두 입력해주세요.")
+                        else:
+                            g_n, cn_n = sel_cls_n.split(" ", 1)
+                            conn = get_db()
+                            conn.execute(
+                                "INSERT INTO notices (notice_type, teacher_id, grade, class_name, title, content) VALUES ('subject',?,?,?,?,?)",
+                                (tid_n, g_n, cn_n, n_title.strip(), n_content.strip()))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"✅ {sel_cls_n} 공지가 등록되었습니다!")
+                            st.rerun()
+
+        with ntab_l:
+            conn = get_db()
+            my_notices = conn.execute(
+                "SELECT * FROM notices WHERE teacher_id=? ORDER BY created_at DESC",
+                (tid_n,)).fetchall()
+            conn.close()
+            if not my_notices:
+                st.info("작성한 공지가 없습니다.")
+            else:
+                for n in my_notices:
+                    with st.expander(f"📘 [{n['grade']} {n['class_name']}] {n['title']}  —  {n['created_at'][:10]}"):
+                        st.write(n["content"])
+                        if st.button("🗑 삭제", key=f"del_tn_{n['id']}"):
+                            conn = get_db()
+                            conn.execute("DELETE FROM notices WHERE id=?", (n["id"],))
+                            conn.commit()
+                            conn.close()
+                            st.rerun()
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 통합 관리자 페이지
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1240,7 +1393,7 @@ elif st.session_state.role == "admin":
     with st.sidebar:
         st.markdown("### 🔑 통합 관리자")
         st.divider()
-        page = st.radio("메뉴", ["📊 전체 현황","👩‍🏫 선생님 관리","👥 학생 관리","🗓 시간표 관리"])
+        page = st.radio("메뉴", ["📊 전체 현황","👩‍🏫 선생님 관리","👥 학생 관리","🗓 시간표 관리","📢 공지사항"])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -1569,6 +1722,47 @@ elif st.session_state.role == "admin":
                                         conn.close()
                                         st.rerun()
                             st.divider()
+
+    elif page == "📢 공지사항":
+        st.subheader("📢 공지사항 관리")
+        ntab_write, ntab_list = st.tabs(["✏️ 공지 작성", "📋 공지 목록"])
+
+        with ntab_write:
+            st.markdown("#### 📣 학원 전체 공지 작성")
+            with st.form("admin_notice_form"):
+                n_title   = st.text_input("제목 *", placeholder="[공지] 학원 휴원 안내")
+                n_content = st.text_area("내용 *", height=150)
+                if st.form_submit_button("공지 등록 ✅", type="primary", use_container_width=True):
+                    if not n_title.strip() or not n_content.strip():
+                        st.error("제목과 내용을 모두 입력해주세요.")
+                    else:
+                        conn = get_db()
+                        conn.execute(
+                            "INSERT INTO notices (notice_type, title, content) VALUES ('global',?,?)",
+                            (n_title.strip(), n_content.strip()))
+                        conn.commit()
+                        conn.close()
+                        st.success("✅ 전체 공지가 등록되었습니다!")
+                        st.rerun()
+
+        with ntab_list:
+            conn = get_db()
+            all_notices = conn.execute(
+                "SELECT * FROM notices WHERE notice_type='global' ORDER BY created_at DESC"
+            ).fetchall()
+            conn.close()
+            if not all_notices:
+                st.info("등록된 공지가 없습니다.")
+            else:
+                for n in all_notices:
+                    with st.expander(f"📣 {n['title']}  —  {n['created_at'][:10]}"):
+                        st.write(n["content"])
+                        if st.button("🗑 삭제", key=f"del_notice_{n['id']}"):
+                            conn = get_db()
+                            conn.execute("DELETE FROM notices WHERE id=?", (n["id"],))
+                            conn.commit()
+                            conn.close()
+                            st.rerun()
 
     elif page == "👥 학생 관리":
         st.subheader("👥 학생 관리")
