@@ -5,13 +5,12 @@ from datetime import datetime, date
 from pathlib import Path
 
 st.set_page_config(
-    page_title="패스파인더 국어 과제 관리",
-    page_icon="🟦",
+    page_title="패스파인더 과제 관리",
+    page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded",
 )
-st.image("투명로고(4) 화이트.png", width=200)
-st.title("학생 과제 제출 프로그램")
+
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 ADMIN_PASSWORD = "pathfinder2024"
@@ -65,19 +64,33 @@ def init_db():
             FOREIGN KEY (assignment_id) REFERENCES assignments(id),
             UNIQUE(student_id, assignment_id)
         );
+        CREATE TABLE IF NOT EXISTS videos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            youtube_url TEXT NOT NULL,
+            grade TEXT NOT NULL,
+            class_name TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        );
     """)
     conn.commit()
     conn.close()
 
 init_db()
 
-def save_uploaded_file(uploaded_file, student_id, assignment_id):
+def save_uploaded_file(uploaded_file, student_id, assignment_id, idx=0):
     ext = Path(uploaded_file.name).suffix
-    filename = f"s{student_id}_a{assignment_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
+    filename = f"s{student_id}_a{assignment_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{idx}{ext}"
     path = UPLOAD_DIR / filename
     with open(path, "wb") as f:
         f.write(uploaded_file.read())
     return str(path)
+
+def save_multiple_files(uploaded_files, student_id, assignment_id):
+    paths = []
+    for idx, f in enumerate(uploaded_files):
+        paths.append(save_uploaded_file(f, student_id, assignment_id, idx))
+    return "|".join(paths)
 
 def get_grades():
     conn = get_db()
@@ -94,12 +107,26 @@ def get_classes(grade=None):
     conn.close()
     return [r["class_name"] for r in rows]
 
+def youtube_embed_url(url: str) -> str:
+    import re
+    # 다양한 유튜브 URL 형식 처리
+    patterns = [
+        r"youtube\.com/watch\?v=([a-zA-Z0-9_-]+)",
+        r"youtu\.be/([a-zA-Z0-9_-]+)",
+        r"youtube\.com/embed/([a-zA-Z0-9_-]+)",
+    ]
+    for p in patterns:
+        m = re.search(p, url)
+        if m:
+            return f"https://www.youtube.com/embed/{m.group(1)}"
+    return url
+
 for key in ["role", "student_id", "student_name", "student_info", "pending_register"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
-
-
+st.title("📚 패스파인더 학생 과제 제출 프로그램")
+st.caption("Pathfinder Korean Academy")
 st.divider()
 
 if st.session_state.role is None:
@@ -188,7 +215,7 @@ if st.session_state.role == "student":
         st.markdown(f"### 👋 {info['name']} 학생")
         st.caption(f"{info['grade']} {info['class_name']} · {info['student_code']}")
         st.divider()
-        page = st.radio("메뉴", ["📋 내 과제 목록", "✅ 제출 완료 목록"])
+        page = st.radio("메뉴", ["📋 내 과제 목록", "✅ 제출 완료 목록", "🎬 강의 영상"])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -227,14 +254,15 @@ if st.session_state.role == "student":
                     if a["sub_id"] is None:
                         with st.form(f"submit_{a['id']}"):
                             st.markdown("##### 📤 과제 제출")
-                            uploaded = st.file_uploader("사진 업로드 (jpg/png/pdf)",
-                                type=["jpg","jpeg","png","pdf"], key=f"file_{a['id']}")
+                            uploaded_files = st.file_uploader("사진 업로드 (jpg/png/pdf, 여러 장 가능)",
+                                type=["jpg","jpeg","png","pdf"], key=f"file_{a['id']}",
+                                accept_multiple_files=True)
                             memo = st.text_area("메모 (선택)", key=f"memo_{a['id']}")
                             if st.form_submit_button("제출하기 ✅", type="primary", use_container_width=True):
-                                if uploaded is None:
-                                    st.error("파일을 첨부해 주세요.")
+                                if not uploaded_files:
+                                    st.error("파일을 하나 이상 첨부해 주세요.")
                                 else:
-                                    fpath = save_uploaded_file(uploaded, sid, a["id"])
+                                    fpath = save_multiple_files(uploaded_files, sid, a["id"])
                                     conn2 = get_db()
                                     try:
                                         conn2.execute(
@@ -242,7 +270,7 @@ if st.session_state.role == "student":
                                             (sid, a["id"], fpath, memo)
                                         )
                                         conn2.commit()
-                                        st.success("제출 완료! 🎉")
+                                        st.success(f"제출 완료! 🎉 ({len(uploaded_files)}개 파일)")
                                         st.rerun()
                                     except sqlite3.IntegrityError:
                                         st.warning("이미 제출한 과제입니다.")
@@ -256,6 +284,24 @@ if st.session_state.role == "student":
                         st.caption(f"제출 시각: {a['submitted_at']}")
                         if a["teacher_comment"]:
                             st.info(f"💬 선생님 코멘트: {a['teacher_comment']}")
+
+    elif page == "🎬 강의 영상":
+        st.subheader("🎬 강의 영상")
+        conn = get_db()
+        videos = conn.execute(
+            "SELECT * FROM videos WHERE grade=? AND class_name=? ORDER BY created_at DESC",
+            (info["grade"], info["class_name"])
+        ).fetchall()
+        conn.close()
+
+        if not videos:
+            st.info("등록된 영상이 없습니다.")
+        else:
+            for v in videos:
+                st.markdown(f"#### {v['title']}")
+                embed_url = youtube_embed_url(v["youtube_url"])
+                st.components.v1.iframe(embed_url, height=400)
+                st.divider()
 
     else:
         st.subheader("✅ 제출 완료 목록")
@@ -276,20 +322,24 @@ if st.session_state.role == "student":
                     st.write(f"**메모:** {s['memo']}")
                 if s["teacher_comment"]:
                     st.info(f"💬 선생님 코멘트: {s['teacher_comment']}")
-                if s["file_path"] and os.path.exists(s["file_path"]):
-                    ext = Path(s["file_path"]).suffix.lower()
-                    if ext in [".jpg", ".jpeg", ".png"]:
-                        st.image(s["file_path"], use_column_width=True)
-                    else:
-                        st.download_button("📎 파일 다운로드",
-                            open(s["file_path"],"rb").read(),
-                            file_name=Path(s["file_path"]).name)
+                if s["file_path"]:
+                    fpaths = s["file_path"].split("|")
+                    for fp in fpaths:
+                        if os.path.exists(fp):
+                            ext = Path(fp).suffix.lower()
+                            if ext in [".jpg", ".jpeg", ".png"]:
+                                st.image(fp, use_column_width=True)
+                            else:
+                                st.download_button("📎 파일 다운로드",
+                                    open(fp,"rb").read(),
+                                    file_name=Path(fp).name,
+                                    key=f"dl_s_{fp}")
 
 elif st.session_state.role == "admin":
     with st.sidebar:
         st.markdown("### 👩‍🏫 선생님")
         st.divider()
-        page = st.radio("메뉴", ["📊 대시보드","📝 과제 등록","📋 과제 관리","🔍 제출 현황","👥 학생 관리"])
+        page = st.radio("메뉴", ["📊 대시보드","📝 과제 등록","📋 과제 관리","🔍 제출 현황","🎬 영상 관리","👥 학생 관리"])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -415,15 +465,19 @@ elif st.session_state.role == "admin":
                     st.caption(f"제출 시각: {sub['submitted_at']}")
                     if sub["memo"]:
                         st.write(f"**학생 메모:** {sub['memo']}")
-                    if sub["file_path"] and os.path.exists(sub["file_path"]):
-                        ext = Path(sub["file_path"]).suffix.lower()
-                        if ext in [".jpg", ".jpeg", ".png"]:
-                            st.image(sub["file_path"], width=400)
-                        else:
-                            st.download_button("📎 파일 다운로드",
-                                open(sub["file_path"],"rb").read(),
-                                file_name=Path(sub["file_path"]).name,
-                                key=f"dl_{sub['id']}")
+                    if sub["file_path"]:
+                        fpaths = sub["file_path"].split("|")
+                        st.caption(f"첨부 파일 {len(fpaths)}개")
+                        for fp in fpaths:
+                            if os.path.exists(fp):
+                                ext = Path(fp).suffix.lower()
+                                if ext in [".jpg", ".jpeg", ".png"]:
+                                    st.image(fp, width=400)
+                                else:
+                                    st.download_button("📎 파일 다운로드",
+                                        open(fp,"rb").read(),
+                                        file_name=Path(fp).name,
+                                        key=f"dl_{sub['id']}_{fp}")
                     col1, col2 = st.columns([1,2])
                     if not sub["is_checked"]:
                         if col1.button("✔ 확인 처리", key=f"chk_{sub['id']}", type="primary"):
@@ -443,6 +497,55 @@ elif st.session_state.role == "admin":
                             conn = get_db()
                             conn.execute("UPDATE submissions SET teacher_comment=? WHERE id=?",
                                          (comment, sub["id"]))
+                            conn.commit()
+                            conn.close()
+                            st.rerun()
+
+    elif page == "🎬 영상 관리":
+        st.subheader("🎬 영상 관리")
+        tab1, tab2 = st.tabs(["영상 목록", "영상 등록"])
+
+        with tab2:
+            with st.form("add_video"):
+                st.markdown("#### 새 영상 등록")
+                v_title = st.text_input("영상 제목 *", placeholder="예) 1강 문학 개념 정리")
+                v_url = st.text_input("유튜브 URL *", placeholder="https://www.youtube.com/watch?v=...")
+                col1, col2 = st.columns(2)
+                grades = get_grades() or ["중1","중2","중3","고1","고2","고3"]
+                v_grade = col1.selectbox("학년 *", grades, key="v_grade")
+                classes = get_classes(v_grade) or ["A반","B반"]
+                v_class = col2.selectbox("반 *", classes, key="v_class")
+                if st.form_submit_button("영상 등록 ✅", type="primary", use_container_width=True):
+                    if not v_title.strip() or not v_url.strip():
+                        st.error("제목과 URL을 입력해주세요.")
+                    elif not youtube_embed_url(v_url):
+                        st.error("올바른 유튜브 URL을 입력해주세요.")
+                    else:
+                        conn = get_db()
+                        conn.execute(
+                            "INSERT INTO videos (title, youtube_url, grade, class_name) VALUES (?,?,?,?)",
+                            (v_title.strip(), v_url.strip(), v_grade, v_class)
+                        )
+                        conn.commit()
+                        conn.close()
+                        st.success(f"✅ '{v_title}' 영상이 {v_grade} {v_class}에 등록되었습니다!")
+                        st.rerun()
+
+        with tab1:
+            conn = get_db()
+            videos = conn.execute("SELECT * FROM videos ORDER BY grade, class_name, created_at DESC").fetchall()
+            conn.close()
+            if not videos:
+                st.info("등록된 영상이 없습니다.")
+            else:
+                for v in videos:
+                    with st.expander(f"🎬 [{v['grade']} {v['class_name']}] {v['title']}"):
+                        embed_url = youtube_embed_url(v["youtube_url"])
+                        st.components.v1.iframe(embed_url, height=300)
+                        st.caption(f"등록일: {v['created_at'][:10]}")
+                        if st.button("🗑 삭제", key=f"vdel_{v['id']}"):
+                            conn = get_db()
+                            conn.execute("DELETE FROM videos WHERE id=?", (v["id"],))
                             conn.commit()
                             conn.close()
                             st.rerun()
