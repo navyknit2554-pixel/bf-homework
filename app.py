@@ -1795,19 +1795,22 @@ elif st.session_state.role == "admin":
 
     elif page == "👥 학생 관리":
         st.subheader("👥 학생 관리")
-        tab1, tab2, tab3, tab4 = st.tabs(["학생 목록","학번 조회","➕ 학생 등록","🏫 수업 배정"])
+        tab1, tab2, tab3 = st.tabs(["📋 학생 목록", "🔍 학생 검색", "🏫 수업 배정"])
+
+        # ── 학생 목록 ──────────────────────────────────────────────
         with tab1:
             conn = get_db()
             students = conn.execute("SELECT * FROM students ORDER BY grade, class_name, name").fetchall()
             conn.close()
             import pandas as pd
-            if students:
+            if not students:
+                st.info("등록된 학생이 없습니다.")
+            else:
                 df = pd.DataFrame([dict(s) for s in students])
                 df["phone"]        = df.get("phone", "")
                 df["parent_name"]  = df.get("parent_name", "")
                 df["parent_phone"] = df.get("parent_phone", "")
                 df["school"]       = df.get("school", "")
-                # 학년 자동 계산 적용
                 def apply_grade(row):
                     try:
                         bg = row.get("base_grade") or row.get("grade") or ""
@@ -1821,108 +1824,99 @@ elif st.session_state.role == "admin":
                 df = df[["name","student_code","current_grade","class_name","school","phone","parent_name","parent_phone","created_at"]]
                 df.columns = ["이름","학번","학년(현재)","반","학교","학생연락처","학부모","학부모연락처","등록일"]
                 st.dataframe(df, use_container_width=True, hide_index=True)
-                st.divider()
-                st.markdown("#### 📱 연락처 등록/수정")
-                search_q = st.text_input("🔍 학생 이름 검색", placeholder="이름 입력...", key="student_search")
-                filtered = [s for s in students if search_q.strip().lower() in s["name"].lower()] if search_q.strip() else students
+
+        # ── 학생 검색 ──────────────────────────────────────────────
+        with tab2:
+            conn = get_db()
+            all_students_mgmt = conn.execute("SELECT * FROM students ORDER BY grade, class_name, name").fetchall()
+            conn.close()
+
+            st.markdown("#### 🔍 학생 검색 및 정보 수정")
+            search_q = st.text_input("이름 검색", placeholder="이름을 입력하세요...", key="student_search")
+
+            if not search_q.strip():
+                st.info("검색어를 입력하면 학생을 찾을 수 있습니다.")
+            else:
+                filtered = [s for s in all_students_mgmt if search_q.strip().lower() in s["name"].lower()]
                 if not filtered:
                     st.warning("검색 결과가 없습니다.")
-                    st.stop()
-                s_options = {f"{s['name']} ({s['grade']} {s['class_name']})": s["id"] for s in filtered}
-                sel_s     = st.selectbox("학생 선택", list(s_options.keys()), key="phone_student")
-                sel_id    = s_options[sel_s]
-                sel_info  = next(s for s in students if s["id"] == sel_id)
+                else:
+                    st.caption(f"검색 결과 {len(filtered)}명")
+                    sel_s_mgmt = st.selectbox(
+                        "학생 선택",
+                        [f"{s['name']} ({s['grade']} {s['class_name']})" for s in filtered],
+                        key="search_sel_student"
+                    )
+                    sel_info = next(s for s in filtered if f"{s['name']} ({s['grade']} {s['class_name']})" == sel_s_mgmt)
 
-                # 기본 학년/학교 정보
-                ec1, ec2, ec3 = st.columns(3)
-                edit_school = ec1.text_input("학교", value=sel_info["school"] or "", key="e_school")
-                stored_base = sel_info["base_grade"] or sel_info["grade"] or GRADE_LIST[6]
-                base_idx = GRADE_ORDER.get(stored_base, 6)
-                edit_base_grade = ec2.selectbox("등록 당시 학년", GRADE_LIST, index=base_idx, key="e_base_grade")
-                edit_enroll = ec3.number_input("등록 연도", min_value=2020, max_value=date.today().year,
-                    value=int(sel_info["enrollment_year"] or date.today().year), step=1, key="e_enroll")
-                preview_grade = calc_current_grade(edit_base_grade, edit_enroll)
-                st.caption(f"📌 현재 자동 계산 학년: **{preview_grade}**")
-                st.divider()
+                    st.divider()
+                    # 등록 / 수정 탭
+                    edit_tab1, edit_tab2, edit_tab3 = st.tabs(["📝 기본 정보", "📱 연락처", "🗑 삭제"])
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown("**👤 학생 연락처**")
-                    new_phone = st.text_input("학생 전화번호", value=sel_info["phone"] or "", placeholder="010-0000-0000", key="s_phone")
-                with col2:
-                    st.markdown("**👨‍👩‍👧 학부모 정보**")
-                    stored = sel_info["parent_name"] or ""
-                    rel_options = ["어머니","아버지","조모","조부","기타"]
-                    detected = next((r for r in rel_options if f"({r})" in stored), rel_options[0])
-                    new_parent_rel   = st.selectbox("가족관계", rel_options,
-                        index=rel_options.index(detected), key="p_rel")
-                    new_parent_phone = st.text_input("학부모 전화번호",
-                        value=sel_info["parent_phone"] or "", placeholder="010-0000-0000", key="p_phone")
+                    with edit_tab1:
+                        with st.form("edit_basic_info"):
+                            c1, c2 = st.columns(2)
+                            e_name   = c1.text_input("이름", value=sel_info["name"])
+                            e_school = c2.text_input("학교", value=sel_info["school"] or "")
+                            c3, c4 = st.columns(2)
+                            stored_base = sel_info["base_grade"] or sel_info["grade"] or GRADE_LIST[6]
+                            base_idx = GRADE_ORDER.get(stored_base, 6)
+                            e_base_grade = c3.selectbox("등록 당시 학년", GRADE_LIST, index=base_idx)
+                            class_list_e = ["A반","B반","C반","D반","없음"]
+                            cur_class_e = sel_info["class_name"] if sel_info["class_name"] in class_list_e else "없음"
+                            e_class = c4.selectbox("반", class_list_e, index=class_list_e.index(cur_class_e))
+                            e_enroll = st.number_input("등록 연도", min_value=2020, max_value=date.today().year,
+                                value=int(sel_info["enrollment_year"] or date.today().year), step=1)
+                            preview_g = calc_current_grade(e_base_grade, e_enroll)
+                            st.caption(f"📌 현재 자동 계산 학년: **{preview_g}**")
+                            if st.form_submit_button("저장 ✅", type="primary", use_container_width=True):
+                                conn = get_db()
+                                conn.execute(
+                                    "UPDATE students SET name=?, school=?, base_grade=?, class_name=?, enrollment_year=?, grade=? WHERE id=?",
+                                    (e_name.strip(), e_school.strip() or None, e_base_grade,
+                                     e_class if e_class != "없음" else "", int(e_enroll), preview_g, sel_info["id"]))
+                                conn.commit()
+                                conn.close()
+                                st.success("✅ 기본 정보가 저장되었습니다!")
+                                st.rerun()
 
-                if st.button("저장 ✅", type="primary", use_container_width=True):
-                    parent_label = f"{sel_info['name']}({new_parent_rel})"
-                    current_g = calc_current_grade(edit_base_grade, edit_enroll)
-                    conn = get_db()
-                    conn.execute(
-                        "UPDATE students SET phone=?, parent_name=?, parent_phone=?, school=?, base_grade=?, enrollment_year=?, grade=? WHERE id=?",
-                        (new_phone.strip(), parent_label, new_parent_phone.strip(),
-                         edit_school.strip() or None, edit_base_grade, int(edit_enroll), current_g, sel_id))
-                    conn.commit()
-                    conn.close()
-                    st.success("정보가 저장되었습니다! ✅")
-                    st.rerun()
-            else:
-                st.info("등록된 학생이 없습니다.")
-        with tab2:
-            st.markdown("#### 이름으로 학번 확인")
-            name_check = st.text_input("이름 입력", placeholder="홍길동")
-            if name_check.strip():
-                st.success(f"{name_check.strip()} 의 학번: **{name_to_code(name_check.strip())}**")
+                    with edit_tab2:
+                        with st.form("edit_contact_info"):
+                            c1, c2 = st.columns(2)
+                            e_phone = c1.text_input("학생 전화번호", value=sel_info["phone"] or "", placeholder="010-0000-0000")
+                            stored_rel = sel_info["parent_name"] or ""
+                            rel_opts = ["어머니","아버지","조모","조부","기타"]
+                            detected_rel = next((r for r in rel_opts if f"({r})" in stored_rel), rel_opts[0])
+                            e_parent_rel = c2.selectbox("가족관계", rel_opts, index=rel_opts.index(detected_rel))
+                            e_parent_phone = st.text_input("학부모 전화번호", value=sel_info["parent_phone"] or "", placeholder="010-0000-0000")
+                            if st.form_submit_button("저장 ✅", type="primary", use_container_width=True):
+                                parent_label = f"{sel_info['name']}({e_parent_rel})"
+                                conn = get_db()
+                                conn.execute(
+                                    "UPDATE students SET phone=?, parent_name=?, parent_phone=? WHERE id=?",
+                                    (e_phone.strip(), parent_label, e_parent_phone.strip(), sel_info["id"]))
+                                conn.commit()
+                                conn.close()
+                                st.success("✅ 연락처가 저장되었습니다!")
+                                st.rerun()
+
+                    with edit_tab3:
+                        st.warning(f"**{sel_info['name']}** 학생을 삭제하면 제출 기록과 배정 정보도 함께 삭제됩니다.")
+                        confirm_del = st.text_input("삭제하려면 학생 이름을 정확히 입력하세요")
+                        if st.button("🗑 영구 삭제", type="primary", use_container_width=True):
+                            if confirm_del.strip() == sel_info["name"]:
+                                conn = get_db()
+                                conn.execute("DELETE FROM student_teachers WHERE student_id=?", (sel_info["id"],))
+                                conn.execute("DELETE FROM submissions WHERE student_id=?", (sel_info["id"],))
+                                conn.execute("DELETE FROM students WHERE id=?", (sel_info["id"],))
+                                conn.commit()
+                                conn.close()
+                                st.success(f"✅ {sel_info['name']} 학생이 삭제되었습니다.")
+                                st.rerun()
+                            else:
+                                st.error("이름이 일치하지 않습니다.")
 
         with tab3:
-            st.markdown("#### 학생 직접 등록")
-            with st.form("admin_add_student"):
-                col1, col2 = st.columns(2)
-                new_name   = col1.text_input("이름 *", placeholder="홍길동")
-                new_school = col2.text_input("학교", placeholder="패스파인더중학교")
-                col3, col4 = st.columns(2)
-                new_grade  = col3.selectbox("학년 *", GRADE_LIST)
-                new_class  = col4.selectbox("반 *", ["A반","B반","C반","D반","없음"])
-                col5, col6 = st.columns(2)
-                new_phone  = col5.text_input("학생 연락처", placeholder="010-0000-0000")
-                new_enroll = col6.number_input("등록 연도 *", min_value=2020, max_value=date.today().year, value=date.today().year, step=1)
-                st.caption("💡 등록 연도 기준으로 매년 자동으로 학년이 올라갑니다.")
-                col7, col8 = st.columns(2)
-                new_parent_rel   = col7.selectbox("가족관계", ["어머니","아버지","조모","조부","기타"])
-                new_parent_phone = col8.text_input("학부모 연락처", placeholder="010-0000-0000")
-                if st.form_submit_button("학생 등록 ✅", type="primary", use_container_width=True):
-                    if not new_name.strip():
-                        st.error("이름을 입력해주세요.")
-                    else:
-                        code = name_to_code(new_name.strip())
-                        parent_label = f"{new_name.strip()}({new_parent_rel})"
-                        current_grade = calc_current_grade(new_grade, new_enroll)
-                        conn = get_db()
-                        try:
-                            conn.execute(
-                                "INSERT INTO students (name, student_code, grade, class_name, phone, parent_name, parent_phone, school, enrollment_year, base_grade) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                                (new_name.strip(), code, current_grade,
-                                 new_class if new_class != "없음" else "",
-                                 new_phone.strip() or None,
-                                 parent_label,
-                                 new_parent_phone.strip() or None,
-                                 new_school.strip() or None,
-                                 int(new_enroll), new_grade))
-                            conn.commit()
-                            grade_note = f" (현재 {current_grade})" if current_grade != new_grade else ""
-                            st.success(f"✅ {new_name} 학생 등록 완료!  학번: **{code}**{grade_note}")
-                            st.rerun()
-                        except sqlite3.IntegrityError:
-                            st.error(f"이미 등록된 학생입니다. (학번: {code})")
-                        finally:
-                            conn.close()
-
-        with tab4:
             st.markdown("#### 🏫 수업 배정")
             st.caption("학생을 선택해 학년·반을 지정하거나, 반 전체를 한 번에 변경할 수 있습니다.")
 
