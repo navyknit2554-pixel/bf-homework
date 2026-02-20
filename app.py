@@ -1489,9 +1489,14 @@ elif st.session_state.role == "admin":
                 df["school"]       = df.get("school", "")
                 # 학년 자동 계산 적용
                 def apply_grade(row):
-                    bg = row.get("base_grade") or row.get("grade","")
-                    ey = row.get("enrollment_year")
-                    return calc_current_grade(bg, ey) if ey else row.get("grade","")
+                    try:
+                        bg = row.get("base_grade") or row.get("grade") or ""
+                        ey = row.get("enrollment_year")
+                        if not bg or not ey or bg not in GRADE_ORDER:
+                            return row.get("grade") or ""
+                        return calc_current_grade(bg, int(ey))
+                    except:
+                        return row.get("grade") or ""
                 df["current_grade"] = df.apply(apply_grade, axis=1)
                 df = df[["name","student_code","current_grade","class_name","school","phone","parent_name","parent_phone","created_at"]]
                 df.columns = ["이름","학번","학년(현재)","반","학교","학생연락처","학부모","학부모연락처","등록일"]
