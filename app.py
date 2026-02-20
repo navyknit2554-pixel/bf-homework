@@ -1558,7 +1558,7 @@ elif st.session_state.role == "admin":
 
     elif page == "👥 학생 관리":
         st.subheader("👥 학생 관리")
-        tab1, tab2, tab3 = st.tabs(["학생 목록","학번 조회","➕ 학생 등록"])
+        tab1, tab2, tab3, tab4 = st.tabs(["학생 목록","학번 조회","➕ 학생 등록","🏫 수업 배정"])
         with tab1:
             conn = get_db()
             students = conn.execute("SELECT * FROM students ORDER BY grade, class_name, name").fetchall()
@@ -1679,3 +1679,92 @@ elif st.session_state.role == "admin":
                             st.error(f"이미 등록된 학생입니다. (학번: {code})")
                         finally:
                             conn.close()
+
+        with tab4:
+            st.markdown("#### 🏫 수업 배정")
+            st.caption("학생을 선택해 학년·반을 지정하거나, 반 전체를 한 번에 변경할 수 있습니다.")
+
+            assign_tab1, assign_tab2 = st.tabs(["👤 개별 배정", "👥 반 일괄 배정"])
+
+            # ── 개별 배정 ──────────────────────────────────────────
+            with assign_tab1:
+                conn = get_db()
+                all_students = conn.execute(
+                    "SELECT * FROM students ORDER BY grade, class_name, name").fetchall()
+                conn.close()
+
+                if not all_students:
+                    st.info("등록된 학생이 없습니다.")
+                else:
+                    s_opts = {f"{s['name']} ({s['grade']} {s['class_name']})": s for s in all_students}
+                    sel_name = st.selectbox("학생 선택", list(s_opts.keys()), key="assign_sel")
+                    sel_s = s_opts[sel_name]
+
+                    # 현재 배정 정보 표시
+                    st.markdown(f"**현재:** {sel_s['grade']} {sel_s['class_name']}  |  학교: {sel_s['school'] or '미등록'}")
+                    st.divider()
+
+                    col1, col2, col3 = st.columns(3)
+                    cur_grade_idx = GRADE_LIST.index(sel_s["grade"]) if sel_s["grade"] in GRADE_LIST else 6
+                    new_grade_a  = col1.selectbox("학년", GRADE_LIST, index=cur_grade_idx, key="assign_grade")
+                    class_list   = ["A반","B반","C반","D반","없음"]
+                    cur_class    = sel_s["class_name"] if sel_s["class_name"] in class_list else "없음"
+                    new_class_a  = col2.selectbox("반", class_list, index=class_list.index(cur_class), key="assign_class")
+                    new_school_a = col3.text_input("학교", value=sel_s["school"] or "", key="assign_school")
+
+                    if st.button("배정 저장 ✅", type="primary", use_container_width=True, key="assign_save"):
+                        conn = get_db()
+                        conn.execute(
+                            "UPDATE students SET grade=?, class_name=?, school=?, base_grade=? WHERE id=?",
+                            (new_grade_a,
+                             new_class_a if new_class_a != "없음" else "",
+                             new_school_a.strip() or None,
+                             new_grade_a,  # base_grade도 함께 업데이트
+                             sel_s["id"]))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"✅ {sel_s['name']} → {new_grade_a} {new_class_a} 배정 완료!")
+                        st.rerun()
+
+            # ── 반 일괄 배정 ──────────────────────────────────────
+            with assign_tab2:
+                st.caption("특정 학년·반 전체 학생을 다른 반으로 한 번에 이동합니다.")
+                conn = get_db()
+                grade_class_list = conn.execute(
+                    "SELECT DISTINCT grade, class_name FROM students ORDER BY grade, class_name").fetchall()
+                conn.close()
+
+                if not grade_class_list:
+                    st.info("등록된 학생이 없습니다.")
+                else:
+                    gc_opts = [f"{r['grade']} {r['class_name']}" for r in grade_class_list]
+                    col1, col2 = st.columns(2)
+                    src = col1.selectbox("이동할 반 (현재)", gc_opts, key="bulk_src")
+                    src_grade, src_class = src.split(" ", 1)
+
+                    # 해당 반 학생 미리보기
+                    conn = get_db()
+                    src_students = conn.execute(
+                        "SELECT * FROM students WHERE grade=? AND class_name=? ORDER BY name",
+                        (src_grade, src_class)).fetchall()
+                    conn.close()
+                    st.markdown(f"**{src} 학생 {len(src_students)}명:** {', '.join([s['name'] for s in src_students])}")
+                    st.divider()
+
+                    col3, col4 = st.columns(2)
+                    dst_grade = col3.selectbox("이동할 학년", GRADE_LIST, key="bulk_dst_grade")
+                    dst_class = col4.selectbox("이동할 반", ["A반","B반","C반","D반","없음"], key="bulk_dst_class")
+
+                    if st.button(f"🚀 {len(src_students)}명 일괄 이동", type="primary", use_container_width=True, key="bulk_move"):
+                        if src == f"{dst_grade} {dst_class}":
+                            st.warning("현재와 동일한 반입니다.")
+                        else:
+                            conn = get_db()
+                            conn.execute(
+                                "UPDATE students SET grade=?, class_name=?, base_grade=? WHERE grade=? AND class_name=?",
+                                (dst_grade, dst_class if dst_class != "없음" else "",
+                                 dst_grade, src_grade, src_class))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"✅ {src} → {dst_grade} {dst_class}  {len(src_students)}명 이동 완료!")
+                            st.rerun()
