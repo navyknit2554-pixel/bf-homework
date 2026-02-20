@@ -31,6 +31,20 @@ def verify_code(name, code):
 def hash_pw(pw):
     return hashlib.sha256(pw.encode()).hexdigest()
 
+def create_parent_account(student):
+    """학생 등록 시 학부모 계정 자동 생성. 이미 있으면 skip."""
+    username = str(student["student_code"]) + "p"
+    default_pw = hash_pw(student["name"])  # 초기 비밀번호 = 학생 이름
+    parent_phone = student.get("parent_phone") or ""
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO parents (username, password_hash, parent_phone) VALUES (?,?,?)",
+            (username, default_pw, parent_phone))
+        conn.commit()
+    finally:
+        conn.close()
+
 def youtube_embed_url(url):
     for p in [r"youtube\.com/watch\?v=([a-zA-Z0-9_-]+)",
               r"youtu\.be/([a-zA-Z0-9_-]+)",
@@ -168,6 +182,13 @@ def init_db():
         "ALTER TABLE students ADD COLUMN school TEXT",
         "ALTER TABLE students ADD COLUMN enrollment_year INTEGER",
         "ALTER TABLE students ADD COLUMN base_grade TEXT",
+        """CREATE TABLE IF NOT EXISTS parents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            parent_phone TEXT,
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        )""",
         """CREATE TABLE IF NOT EXISTS notices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             notice_type TEXT NOT NULL,
@@ -267,7 +288,7 @@ def get_classes(grade=None):
     conn.close()
     return [r["class_name"] for r in rows]
 
-for key in ["role","student_id","student_info","teacher_id","teacher_info","pending_register"]:
+for key in ["role","student_id","student_info","teacher_id","teacher_info","parent_id","parent_info","pending_register"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
@@ -308,7 +329,7 @@ if st.session_state.role is None:
             st.rerun()
         st.stop()
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         st.subheader("🎒 학생 로그인")
@@ -360,6 +381,25 @@ if st.session_state.role is None:
                     st.error("아이디 또는 비밀번호를 확인해주세요.")
 
     with col3:
+        st.subheader("👨‍👩‍👧 학부모 로그인")
+        with st.form("parent_login"):
+            p_user = st.text_input("아이디", placeholder="학번+p (예: 284713p)")
+            p_pw   = st.text_input("비밀번호", type="password", placeholder="초기: 자녀 이름")
+            if st.form_submit_button("로그인", use_container_width=True, type="primary"):
+                conn = get_db()
+                row = conn.execute(
+                    "SELECT * FROM parents WHERE username=? AND password_hash=?",
+                    (p_user.strip(), hash_pw(p_pw))).fetchone()
+                conn.close()
+                if row:
+                    st.session_state.role = "parent"
+                    st.session_state.parent_id = row["id"]
+                    st.session_state.parent_info = dict(row)
+                    st.rerun()
+                else:
+                    st.error("아이디 또는 비밀번호를 확인해주세요.")
+
+    with col4:
         st.subheader("🔑 통합 관리자")
         with st.form("admin_login"):
             pw = st.text_input("관리자 비밀번호", type="password")
@@ -800,6 +840,300 @@ if st.session_state.role == "student":
                             else:
                                 st.download_button("📎 파일 다운로드",
                                     open(fp,"rb").read(), file_name=Path(fp).name, key=f"dl_{fp}")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 학부모 페이지
+# ══════════════════════════════════════════════════════════════════════════════
+elif st.session_state.role == "parent":
+    from datetime import datetime as dt_now
+    pinfo = st.session_state.parent_info
+
+    # 이 학부모 계정에 연결된 자녀 목록
+    # 방법: 아이디에서 학번 추출 → 같은 학부모 연락처로 등록된 학생 전체
+    base_code = pinfo["username"].rstrip("p")
+    conn = get_db()
+    primary_student = conn.execute("SELECT * FROM students WHERE student_code=?", (base_code,)).fetchone()
+    if primary_student and primary_student["parent_phone"]:
+        # 같은 학부모 연락처 학생 모두
+        children = conn.execute(
+            "SELECT * FROM students WHERE parent_phone=? ORDER BY grade, name",
+            (primary_student["parent_phone"],)).fetchall()
+    elif primary_student:
+        children = [primary_student]
+    else:
+        children = []
+    conn.close()
+
+    # 사이드바
+    with st.sidebar:
+        st.markdown("### 👨‍👩‍👧 학부모 페이지")
+        st.divider()
+
+        # 자녀 선택
+        if len(children) > 1:
+            child_opts = {f"{c['name']} ({c['grade']} {c['class_name']})": c for c in children}
+            sel_child_name = st.selectbox("👦 자녀 선택", list(child_opts.keys()), key="parent_child_sel")
+            cur_child = child_opts[sel_child_name]
+        elif len(children) == 1:
+            cur_child = dict(children[0])
+            st.markdown(f"**👦 {cur_child['name']}** ({cur_child['grade']} {cur_child['class_name']})")
+        else:
+            st.warning("연결된 학생 정보를 찾을 수 없습니다.")
+            if st.button("로그아웃"):
+                st.session_state.role = None
+                st.rerun()
+            st.stop()
+
+        st.divider()
+        page = st.radio("메뉴", ["🏠 홈", "📚 과제 현황", "🗓 시간표", "🔐 비밀번호 변경"])
+        st.divider()
+        if st.button("로그아웃", use_container_width=True):
+            st.session_state.role = None
+            st.rerun()
+
+    DAYS_P   = ["월","화","수","목","금"]
+    PERIODS_P = [1,2,3,4]
+
+    # ── 홈 ────────────────────────────────────────────────────────
+    if page == "🏠 홈":
+        today = dt_now.now()
+        day_kr = ["월","화","수","목","금","토","일"][today.weekday()]
+        st.subheader(f"🏠 안녕하세요! {cur_child['name']} 학부모님")
+        st.caption(f"📅 {today.year}년 {today.month}월 {today.day}일 ({day_kr}요일)")
+        st.divider()
+
+        # 오늘의 수업
+        st.markdown("#### 📚 오늘의 수업")
+        if day_kr not in DAYS_P:
+            st.info("오늘은 주말입니다.")
+        else:
+            conn = get_db()
+            today_tt = conn.execute(
+                "SELECT * FROM timetable WHERE grade=? AND class_name=? AND day=? ORDER BY period",
+                (cur_child["grade"], cur_child["class_name"], day_kr)).fetchall()
+            pt_today = conn.execute(
+                "SELECT * FROM period_times WHERE grade='공통' AND class_name='공통' ORDER BY period"
+            ).fetchall()
+            conn.close()
+            pt_map_p = {r["period"]: r for r in pt_today}
+            tt_today = {r["period"]: r for r in today_tt}
+            if not today_tt:
+                st.info("오늘 등록된 수업이 없습니다.")
+            else:
+                for p in PERIODS_P:
+                    cell = tt_today.get(p)
+                    pt   = pt_map_p.get(p)
+                    time_str = ""
+                    if pt and pt["start_time"]:
+                        time_str = f"{pt['start_time']} ~ {pt['end_time']}" if pt["end_time"] else pt["start_time"]
+                    if cell and cell["subject"]:
+                        col1, col2 = st.columns([1, 4])
+                        col1.markdown(
+                            f"<div style='background:#1e293b;border-left:3px solid #3b82f6;padding:10px 8px;border-radius:4px;text-align:center;'>"
+                            f"<b>{p}교시</b><br><span style='font-size:0.7rem;color:#64748b;'>{time_str}</span></div>",
+                            unsafe_allow_html=True)
+                        col2.markdown(
+                            f"<div style='background:#1e3a5f;border-radius:8px;padding:10px 16px;'>"
+                            f"<span style='font-size:1rem;font-weight:bold;'>{cell['subject']}</span>"
+                            f"<span style='color:#94a3b8;font-size:0.85rem;margin-left:12px;'>{cell['teacher_name'] or ''} 선생님</span>"
+                            f"</div>", unsafe_allow_html=True)
+                        st.markdown("")
+        st.divider()
+
+        # 공지사항
+        st.markdown("#### 📢 공지사항")
+        conn = get_db()
+        global_notices_p = conn.execute(
+            "SELECT * FROM notices WHERE notice_type='global' ORDER BY created_at DESC LIMIT 10"
+        ).fetchall()
+        subject_notices_p = conn.execute("""
+            SELECT n.*, t.name as teacher_name_real, t.subject as teacher_subject
+            FROM notices n LEFT JOIN teachers t ON n.teacher_id = t.id
+            WHERE n.notice_type='subject' AND n.grade=? AND n.class_name=?
+            ORDER BY n.created_at DESC LIMIT 20
+        """, (cur_child["grade"], cur_child["class_name"])).fetchall()
+        conn.close()
+
+        ntab1, ntab2 = st.tabs([f"📣 학원 공지 ({len(global_notices_p)})", f"📘 과목별 공지 ({len(subject_notices_p)})"])
+        with ntab1:
+            if not global_notices_p:
+                st.info("학원 공지사항이 없습니다.")
+            else:
+                for n in global_notices_p:
+                    st.markdown(
+                        f"<div style='background:#1e293b;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin-bottom:10px;'>"
+                        f"<div style='font-size:0.75rem;color:#64748b;margin-bottom:4px;'>📣 {n['created_at'][:10]}</div>"
+                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:8px;'>{n['title']}</div>"
+                        f"<div style='color:#cbd5e1;white-space:pre-wrap;'>{n['content']}</div>"
+                        f"</div>", unsafe_allow_html=True)
+        with ntab2:
+            if not subject_notices_p:
+                st.info("과목별 공지사항이 없습니다.")
+            else:
+                for n in subject_notices_p:
+                    label = n["teacher_subject"] or ""
+                    tname = n["teacher_name_real"] or ""
+                    st.markdown(
+                        f"<div style='background:#1e293b;border-left:4px solid #3b82f6;border-radius:6px;padding:14px 16px;margin-bottom:10px;'>"
+                        f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
+                        f"<span style='background:#1d4ed8;color:#fff;font-size:0.85rem;font-weight:bold;padding:3px 10px;border-radius:20px;'>{label}</span>"
+                        f"<span style='color:#93c5fd;font-size:0.9rem;font-weight:600;'>{tname} 선생님</span>"
+                        f"<span style='color:#475569;font-size:0.75rem;margin-left:auto;'>{n['created_at'][:10]}</span>"
+                        f"</div>"
+                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:8px;'>{n['title']}</div>"
+                        f"<div style='color:#cbd5e1;white-space:pre-wrap;'>{n['content']}</div>"
+                        f"</div>", unsafe_allow_html=True)
+
+    # ── 과제 현황 ──────────────────────────────────────────────────
+    elif page == "📚 과제 현황":
+        st.subheader(f"📚 {cur_child['name']} 과제 현황")
+        conn = get_db()
+        # 이 학생에게 배정된 과제 전체
+        assignments_p = conn.execute("""
+            SELECT a.*, t.name as teacher_name_r, t.subject as teacher_subject_r
+            FROM assignments a
+            JOIN teachers t ON a.teacher_id = t.id
+            WHERE a.grade=? AND a.class_name=?
+            ORDER BY a.created_at DESC
+        """, (cur_child["grade"], cur_child["class_name"])).fetchall()
+        # 제출 현황
+        submitted_ids = set(
+            r["assignment_id"] for r in conn.execute(
+                "SELECT assignment_id FROM submissions WHERE student_id=?",
+                (cur_child["id"],)).fetchall()
+        )
+        # 제출 내용 (사진 포함)
+        submissions_map = {
+            r["assignment_id"]: r for r in conn.execute(
+                "SELECT * FROM submissions WHERE student_id=?",
+                (cur_child["id"],)).fetchall()
+        }
+        conn.close()
+
+        if not assignments_p:
+            st.info("등록된 과제가 없습니다.")
+        else:
+            submitted   = [a for a in assignments_p if a["id"] in submitted_ids]
+            unsubmitted = [a for a in assignments_p if a["id"] not in submitted_ids]
+
+            col_a, col_b = st.columns(2)
+            col_a.metric("✅ 제출 완료", len(submitted))
+            col_b.metric("⏳ 미제출", len(unsubmitted))
+            st.divider()
+
+            tab_sub, tab_unsub = st.tabs([f"✅ 제출 완료 ({len(submitted)})", f"⏳ 미제출 ({len(unsubmitted)})"])
+
+            with tab_sub:
+                if not submitted:
+                    st.info("제출한 과제가 없습니다.")
+                else:
+                    for a in submitted:
+                        sub = submissions_map.get(a["id"])
+                        checked_str = "✔ 확인됨" if sub and sub["is_checked"] else "⏳ 미확인"
+                        st.markdown(
+                            f"<div style='background:#1e293b;border-left:4px solid #22c55e;border-radius:6px;padding:12px 16px;margin-bottom:8px;'>"
+                            f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
+                            f"<span style='font-weight:bold;'>{a['title']}</span>"
+                            f"<span style='font-size:0.75rem;color:#64748b;'>{checked_str}</span>"
+                            f"</div>"
+                            f"<div style='font-size:0.8rem;color:#94a3b8;margin-top:4px;'>{a['teacher_subject_r']} · {a['teacher_name_r']} 선생님 · 제출: {(sub['submitted_at'] or '')[:10]}</div>"
+                            f"</div>", unsafe_allow_html=True)
+                        if sub:
+                            if sub.get("content"):
+                                with st.expander("📝 제출 내용 보기"):
+                                    st.write(sub["content"])
+                            if sub.get("image_data"):
+                                with st.expander("🖼 제출 사진 보기"):
+                                    import base64
+                                    img_data = sub["image_data"]
+                                    if isinstance(img_data, bytes):
+                                        img_b64 = base64.b64encode(img_data).decode()
+                                    else:
+                                        img_b64 = img_data
+                                    st.markdown(f"<img src='data:image/jpeg;base64,{img_b64}' style='max-width:100%;border-radius:8px;'>", unsafe_allow_html=True)
+
+            with tab_unsub:
+                if not unsubmitted:
+                    st.info("미제출 과제가 없습니다. 🎉")
+                else:
+                    for a in unsubmitted:
+                        st.markdown(
+                            f"<div style='background:#1e293b;border-left:4px solid #ef4444;border-radius:6px;padding:12px 16px;margin-bottom:8px;'>"
+                            f"<div style='font-weight:bold;'>{a['title']}</div>"
+                            f"<div style='font-size:0.8rem;color:#94a3b8;margin-top:4px;'>{a['teacher_subject_r']} · {a['teacher_name_r']} 선생님</div>"
+                            f"</div>", unsafe_allow_html=True)
+
+    # ── 시간표 ────────────────────────────────────────────────────
+    elif page == "🗓 시간표":
+        st.subheader(f"🗓 {cur_child['name']} 시간표 ({cur_child['grade']} {cur_child['class_name']})")
+        conn = get_db()
+        rows_p = conn.execute(
+            "SELECT * FROM timetable WHERE grade=? AND class_name=?",
+            (cur_child["grade"], cur_child["class_name"])).fetchall()
+        pt_rows_p = conn.execute(
+            "SELECT * FROM period_times WHERE grade='공통' AND class_name='공통' ORDER BY period"
+        ).fetchall()
+        conn.close()
+        if not rows_p:
+            st.info("아직 등록된 시간표가 없습니다.")
+        else:
+            tt_p = {(r["day"], r["period"]): r for r in rows_p}
+            pt_map_p2 = {r["period"]: r for r in pt_rows_p}
+            h_cols = st.columns([1]+[2]*len(DAYS_P))
+            h_cols[0].markdown("**교시**")
+            for i, d in enumerate(DAYS_P): h_cols[i+1].markdown(f"**{d}요일**")
+            st.divider()
+            for p in PERIODS_P:
+                st.markdown("<hr style='margin:2px 0;border:none;border-top:1px solid #1e293b;'>", unsafe_allow_html=True)
+                r_cols = st.columns([1]+[2]*len(DAYS_P))
+                pt2 = pt_map_p2.get(p)
+                row_bg = "#111827" if p % 2 == 1 else "#0d1117"
+                if pt2 and pt2["start_time"]:
+                    tl = f"{pt2['start_time']}~{pt2['end_time']}" if pt2["end_time"] else pt2["start_time"]
+                    r_cols[0].markdown(
+                        f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
+                        f"<b>{p}교시</b><br><span style='font-size:0.7rem;color:#64748b;'>{tl}</span></div>",
+                        unsafe_allow_html=True)
+                else:
+                    r_cols[0].markdown(
+                        f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
+                        f"<b>{p}교시</b></div>", unsafe_allow_html=True)
+                for i, d in enumerate(DAYS_P):
+                    cell = tt_p.get((d, p))
+                    if cell and cell["subject"]:
+                        r_cols[i+1].markdown(
+                            f"<div style='background:#1e3a5f;border-radius:6px;padding:6px 8px;text-align:center;font-size:0.85rem;margin:2px;'>"
+                            f"<b>{cell['subject']}</b><div style='color:#94a3b8;font-size:0.75rem;'>{cell['teacher_name'] or ''}</div>"
+                            f"</div>", unsafe_allow_html=True)
+                    else:
+                        r_cols[i+1].markdown(
+                            f"<div style='background:{row_bg};border-radius:6px;padding:6px 8px;text-align:center;color:#334155;font-size:0.85rem;margin:2px;'>—</div>",
+                            unsafe_allow_html=True)
+
+    # ── 비밀번호 변경 ──────────────────────────────────────────────
+    elif page == "🔐 비밀번호 변경":
+        st.subheader("🔐 비밀번호 변경")
+        with st.form("parent_pw_change"):
+            cur_pw  = st.text_input("현재 비밀번호", type="password")
+            new_pw1 = st.text_input("새 비밀번호", type="password")
+            new_pw2 = st.text_input("새 비밀번호 확인", type="password")
+            if st.form_submit_button("변경 ✅", type="primary", use_container_width=True):
+                conn = get_db()
+                row_pw = conn.execute(
+                    "SELECT * FROM parents WHERE id=? AND password_hash=?",
+                    (pinfo["id"], hash_pw(cur_pw))).fetchone()
+                if not row_pw:
+                    st.error("현재 비밀번호가 올바르지 않습니다.")
+                elif new_pw1 != new_pw2:
+                    st.error("새 비밀번호가 일치하지 않습니다.")
+                elif len(new_pw1) < 4:
+                    st.error("비밀번호는 4자 이상이어야 합니다.")
+                else:
+                    conn.execute("UPDATE parents SET password_hash=? WHERE id=?",
+                                 (hash_pw(new_pw1), pinfo["id"]))
+                    conn.commit()
+                    st.success("✅ 비밀번호가 변경되었습니다!")
+                conn.close()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 선생님 페이지
@@ -1863,8 +2197,12 @@ elif st.session_state.role == "admin":
                                  new_school.strip() or None,
                                  int(new_enroll), new_grade))
                             conn.commit()
+                            # 학부모 계정 자동 생성
+                            new_student = conn.execute("SELECT * FROM students WHERE student_code=?", (code,)).fetchone()
+                            if new_student:
+                                create_parent_account(dict(new_student))
                             grade_note = f" (현재 {current_grade})" if current_grade != new_grade else ""
-                            st.success(f"✅ {new_name} 학생 등록 완료!  학번: **{code}**{grade_note}")
+                            st.success(f"✅ {new_name} 학생 등록 완료!  학번: **{code}**  학부모 아이디: **{code}p** (초기 비번: 학생 이름)")
                             st.rerun()
                         except sqlite3.IntegrityError:
                             st.error(f"이미 등록된 학생입니다. (학번: {code})")
