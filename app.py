@@ -34,7 +34,7 @@ def hash_pw(pw):
 def create_parent_account(student):
     """학생 등록 시 학부모 계정 자동 생성. 이미 있으면 skip."""
     username = str(student["student_code"]) + "p"
-    default_pw = hash_pw(student["name"])  # 초기 비밀번호 = 학생 이름
+    default_pw = hash_pw(str(student["student_code"]))  # 초기 비밀번호 = 학번
     parent_phone = student.get("parent_phone") or ""
     conn = get_db()
     try:
@@ -395,7 +395,7 @@ if st.session_state.role is None:
         st.subheader("👨‍👩‍👧 학부모 로그인")
         with st.form("parent_login"):
             p_user = st.text_input("아이디", placeholder="학번+p (예: 284713p)")
-            p_pw   = st.text_input("비밀번호", type="password", placeholder="초기: 자녀 이름")
+            p_pw   = st.text_input("비밀번호", type="password", placeholder="초기: 자녀 학번")
             if st.form_submit_button("로그인", use_container_width=True, type="primary"):
                 conn = get_db()
                 row = conn.execute(
@@ -2213,7 +2213,7 @@ elif st.session_state.role == "admin":
                             if new_student:
                                 create_parent_account(dict(new_student))
                             grade_note = f" (현재 {current_grade})" if current_grade != new_grade else ""
-                            st.success(f"✅ {new_name} 학생 등록 완료!  학번: **{code}**  학부모 아이디: **{code}p** (초기 비번: 학생 이름)")
+                            st.success(f"✅ {new_name} 학생 등록 완료!  학번: **{code}**  학부모 아이디: **{code}p** / 비번: **{code}**")
                             st.rerun()
                         except sqlite3.IntegrityError:
                             st.error(f"이미 등록된 학생입니다. (학번: {code})")
@@ -2310,10 +2310,10 @@ elif st.session_state.role == "admin":
                             # 이미 있으면 비번만 재설정
                             conn = get_db()
                             conn.execute("UPDATE parents SET password_hash=? WHERE username=?",
-                                         (hash_pw(sel_info["name"]), p_username))
+                                         (hash_pw(str(sel_info["student_code"])), p_username))
                             conn.commit()
                             conn.close()
-                            st.success(f"✅ 학부모 비밀번호가 **{sel_info['name']}** 으로 초기화되었습니다.")
+                            st.success(f"✅ 학부모 비밀번호가 학번 **{sel_info['student_code']}** 으로 초기화되었습니다.")
                         st.divider()
                         st.warning(f"**{sel_info['name']}** 학생을 삭제하면 제출 기록과 배정 정보도 함께 삭제됩니다.")
                         confirm_del = st.text_input("삭제하려면 학생 이름을 정확히 입력하세요")
