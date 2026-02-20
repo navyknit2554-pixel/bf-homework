@@ -168,6 +168,15 @@ def init_db():
         "ALTER TABLE students ADD COLUMN school TEXT",
         "ALTER TABLE students ADD COLUMN enrollment_year INTEGER",
         "ALTER TABLE students ADD COLUMN base_grade TEXT",
+        """CREATE TABLE IF NOT EXISTS period_times (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            grade TEXT NOT NULL,
+            class_name TEXT NOT NULL,
+            period INTEGER NOT NULL,
+            start_time TEXT,
+            end_time TEXT,
+            UNIQUE(grade, class_name, period)
+        )""",
         """CREATE TABLE IF NOT EXISTS timetable (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             grade TEXT NOT NULL,
@@ -564,6 +573,13 @@ if st.session_state.role == "student":
             else:
                 tt = {(r["day"], r["period"]): r for r in rows}
                 max_p = max((r["period"] for r in rows), default=6)
+                conn = get_db()
+                pt_rows_s = conn.execute(
+                    "SELECT * FROM period_times WHERE grade=? AND class_name=? ORDER BY period",
+                    (info["grade"], info["class_name"])).fetchall()
+                conn.close()
+                pt_map_s = {r["period"]: r for r in pt_rows_s}
+
                 h_cols = st.columns([1]+[2]*len(DAYS))
                 h_cols[0].markdown("**교시**")
                 for i, d in enumerate(DAYS):
@@ -571,7 +587,12 @@ if st.session_state.role == "student":
                 st.divider()
                 for p in range(1, max_p+1):
                     r_cols = st.columns([1]+[2]*len(DAYS))
-                    r_cols[0].markdown(f"**{p}교시**")
+                    pt = pt_map_s.get(p)
+                    if pt and pt["start_time"]:
+                        time_label = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
+                        r_cols[0].markdown(f"**{p}교시**<br><span style='font-size:0.7rem;color:#64748b;'>{time_label}</span>", unsafe_allow_html=True)
+                    else:
+                        r_cols[0].markdown(f"**{p}교시**")
                     for i, d in enumerate(DAYS):
                         cell = tt.get((d, p))
                         if cell and cell["subject"]:
@@ -724,59 +745,74 @@ elif st.session_state.role == "teacher":
         # 선생님 시간표
         st.subheader("🗓 내 시간표")
         DAYS = ["월","화","수","목","금"]
+
+        # 본인 이름이 담당인 시간표 칸이 있는 반 전체 조회
         conn = get_db()
-        assigned_classes = conn.execute(
-            "SELECT DISTINCT grade, class_name FROM assignments WHERE teacher_id=? ORDER BY grade, class_name",
-            (tid,)).fetchall()
+        all_tt = conn.execute(
+            "SELECT DISTINCT grade, class_name FROM timetable WHERE teacher_name=? ORDER BY grade, class_name",
+            (tinfo["name"],)).fetchall()
         conn.close()
 
-        if not assigned_classes:
-            st.info("과제가 배정된 반이 없어 시간표를 불러올 수 없습니다.")
+        if not all_tt:
+            st.info("시간표에 등록된 수업이 없습니다. 관리자에게 시간표 등록을 요청하세요.")
         else:
-            # 담당 반 선택
-            class_options = [f"{r['grade']} {r['class_name']}" for r in assigned_classes]
-            if len(class_options) > 1:
-                sel_cls = st.selectbox("반 선택", class_options, key="tt_sel_cls")
-            else:
-                sel_cls = class_options[0]
-                st.caption(f"📋 {sel_cls}")
-            sel_grade_t, sel_class_t = sel_cls.split(" ", 1)
+            # 담당 반 모두 합쳐서 표시
+            for cls_row in all_tt:
+                cls_grade, cls_class = cls_row["grade"], cls_row["class_name"]
+                conn = get_db()
+                tt_rows = conn.execute(
+                    "SELECT * FROM timetable WHERE grade=? AND class_name=? AND subject IS NOT NULL ORDER BY period",
+                    (cls_grade, cls_class)).fetchall()
+                conn.close()
 
-            conn = get_db()
-            tt_rows = conn.execute(
-                "SELECT * FROM timetable WHERE grade=? AND class_name=? AND subject IS NOT NULL ORDER BY period",
-                (sel_grade_t, sel_class_t)).fetchall()
-            conn.close()
+                if not tt_rows:
+                    continue
 
-            if not tt_rows:
-                st.info("등록된 시간표가 없습니다. 관리자에게 시간표 등록을 요청하세요.")
-            else:
+                st.markdown(f"##### 📋 {cls_grade} {cls_class}")
                 tt = {(r["day"], r["period"]): r for r in tt_rows}
                 max_p = max(r["period"] for r in tt_rows)
+
                 h_cols = st.columns([1]+[2]*len(DAYS))
                 h_cols[0].markdown("**교시**")
                 for i, d in enumerate(DAYS):
                     h_cols[i+1].markdown(f"**{d}요일**")
-                st.divider()
+
+                conn = get_db()
+                pt_rows_t = conn.execute(
+                    "SELECT * FROM period_times WHERE grade=? AND class_name=? ORDER BY period",
+                    (cls_grade, cls_class)).fetchall()
+                conn.close()
+                pt_map_t = {r["period"]: r for r in pt_rows_t}
+
                 for p in range(1, max_p+1):
                     r_cols = st.columns([1]+[2]*len(DAYS))
-                    r_cols[0].markdown(f"**{p}교시**")
+                    pt = pt_map_t.get(p)
+                    if pt and pt["start_time"]:
+                        time_label = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
+                        r_cols[0].markdown(f"**{p}교시**<br><span style='font-size:0.7rem;color:#64748b;'>{time_label}</span>", unsafe_allow_html=True)
+                    else:
+                        r_cols[0].markdown(f"**{p}교시**")
                     for i, d in enumerate(DAYS):
                         cell = tt.get((d, p))
                         if cell and cell["subject"]:
-                            # 본인 과목 강조
                             is_mine = (cell["teacher_name"] or "").strip() == tinfo["name"].strip()
-                            bg = "#1a3a5c" if not is_mine else "#1a4a2a"
-                            border = "2px solid #22c55e" if is_mine else "none"
-                            r_cols[i+1].markdown(
-                                f"<div style='background:{bg};border:{border};border-radius:6px;padding:6px 8px;text-align:center;font-size:0.82rem;'>"
-                                f"<b>{cell['subject']}</b>"
-                                f"<div style='color:#94a3b8;font-size:0.72rem;'>{cell['teacher_name'] or ''}</div>"
-                                f"</div>", unsafe_allow_html=True)
+                            if is_mine:
+                                r_cols[i+1].markdown(
+                                    f"<div style='background:#1a4a2a;border:2px solid #22c55e;border-radius:6px;padding:6px 8px;text-align:center;font-size:0.82rem;'>"
+                                    f"<b>{cell['subject']}</b>"
+                                    f"<div style='color:#86efac;font-size:0.72rem;'>✔ 내 수업</div>"
+                                    f"</div>", unsafe_allow_html=True)
+                            else:
+                                r_cols[i+1].markdown(
+                                    f"<div style='background:#1a2a3a;border-radius:6px;padding:6px 8px;text-align:center;font-size:0.82rem;color:#64748b;'>"
+                                    f"{cell['subject']}"
+                                    f"<div style='font-size:0.72rem;'>{cell['teacher_name'] or ''}</div>"
+                                    f"</div>", unsafe_allow_html=True)
                         else:
                             r_cols[i+1].markdown(
-                                "<div style='background:#0f172a;border-radius:6px;padding:6px 8px;text-align:center;color:#334155;font-size:0.82rem;'>—</div>",
+                                "<div style='background:#0f172a;border-radius:6px;padding:6px 8px;text-align:center;color:#1e293b;font-size:0.82rem;'>—</div>",
                                 unsafe_allow_html=True)
+                st.divider()
         st.divider()
         st.subheader("📬 최근 제출")
         conn = get_db()
@@ -1280,7 +1316,7 @@ elif st.session_state.role == "admin":
     elif page == "🗓 시간표 관리":
         st.subheader("🗓 시간표 관리")
         DAYS    = ["월","화","수","목","금"]
-        PERIODS = [1,2,3,4,5,6,7]
+        PERIODS = [1,2,3,4]
 
         conn = get_db()
         grades = [r["grade"] for r in conn.execute("SELECT DISTINCT grade FROM students ORDER BY grade").fetchall()]
@@ -1324,6 +1360,41 @@ elif st.session_state.role == "admin":
                 if r["subject"]: existing_subjects.add(r["subject"])
 
             st.caption(f"등록된 선생님 {len(teachers_list)}명의 과목을 선택하거나 직접 입력하세요.")
+
+            # 교시별 시간 설정
+            with st.expander("⏰ 교시별 시간 설정"):
+                conn = get_db()
+                pt_rows = conn.execute(
+                    "SELECT * FROM period_times WHERE grade=? AND class_name=? ORDER BY period",
+                    (sel_grade, sel_class)).fetchall()
+                conn.close()
+                pt_map = {r["period"]: dict(r) for r in pt_rows}
+
+                DEFAULT_TIMES = {1:("09:00","09:50"), 2:("10:00","10:50"), 3:("11:00","11:50"), 4:("12:00","12:50")}
+                pt_inputs = {}
+                for p in PERIODS:
+                    pc1, pc2, pc3 = st.columns([1,2,2])
+                    pc1.markdown(f"**{p}교시**")
+                    cur = pt_map.get(p, {})
+                    s_def = cur.get("start_time") or DEFAULT_TIMES[p][0]
+                    e_def = cur.get("end_time")   or DEFAULT_TIMES[p][1]
+                    s_time = pc2.text_input("시작", value=s_def, key=f"pt_s_{sel_grade}_{sel_class}_{p}", placeholder="09:00")
+                    e_time = pc3.text_input("종료", value=e_def, key=f"pt_e_{sel_grade}_{sel_class}_{p}", placeholder="09:50")
+                    pt_inputs[p] = ((s_time or "").strip(), (e_time or "").strip())
+
+                if st.button("⏰ 시간 저장", use_container_width=True, key="save_pt"):
+                    conn = get_db()
+                    for p, (s, e) in pt_inputs.items():
+                        conn.execute("""
+                            INSERT INTO period_times (grade, class_name, period, start_time, end_time)
+                            VALUES (?,?,?,?,?)
+                            ON CONFLICT(grade, class_name, period)
+                            DO UPDATE SET start_time=excluded.start_time, end_time=excluded.end_time
+                        """, (sel_grade, sel_class, p, s or None, e or None))
+                    conn.commit()
+                    conn.close()
+                    st.success("⏰ 교시 시간이 저장되었습니다! ✅")
+                    st.rerun()
 
             h_cols = st.columns([1]+[3]*len(DAYS))
             h_cols[0].markdown("**교시**")
@@ -1388,12 +1459,24 @@ elif st.session_state.role == "admin":
                 st.markdown("#### 👁 저장된 시간표")
                 tt = {(r["day"], r["period"]): r for r in preview}
                 max_p = max(r["period"] for r in preview)
+                conn = get_db()
+                pt_preview = conn.execute(
+                    "SELECT * FROM period_times WHERE grade=? AND class_name=? ORDER BY period",
+                    (sel_grade, sel_class)).fetchall()
+                conn.close()
+                pt_preview_map = {r["period"]: r for r in pt_preview}
+
                 hc = st.columns([1]+[2]*len(DAYS))
                 hc[0].markdown("**교시**")
                 for i, d in enumerate(DAYS): hc[i+1].markdown(f"**{d}**")
                 for p in range(1, max_p+1):
                     rc = st.columns([1]+[2]*len(DAYS))
-                    rc[0].markdown(f"**{p}**")
+                    pt = pt_preview_map.get(p)
+                    time_str = ""
+                    if pt and pt["start_time"]:
+                        tl = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
+                        time_str = f"<br><span style='font-size:0.7rem;color:#64748b;'>{tl}</span>"
+                    rc[0].markdown(f"**{p}교시**{time_str}", unsafe_allow_html=True)
                     for i, d in enumerate(DAYS):
                         cell = tt.get((d,p))
                         if cell and cell["subject"]:
