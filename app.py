@@ -89,6 +89,20 @@ def init_db():
             FOREIGN KEY (assignment_id) REFERENCES assignments(id),
             UNIQUE(student_id, assignment_id)
         );
+        CREATE TABLE IF NOT EXISTS questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            teacher_id INTEGER,
+            subject TEXT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            answer TEXT,
+            is_answered INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            answered_at TEXT,
+            FOREIGN KEY (student_id) REFERENCES students(id),
+            FOREIGN KEY (teacher_id) REFERENCES teachers(id)
+        );
         CREATE TABLE IF NOT EXISTS videos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
@@ -107,6 +121,20 @@ def init_db():
         "ALTER TABLE videos ADD COLUMN category TEXT DEFAULT '기본'",
         "ALTER TABLE videos ADD COLUMN teacher_id INTEGER",
         "ALTER TABLE assignments ADD COLUMN teacher_id INTEGER",
+        """CREATE TABLE IF NOT EXISTS questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            teacher_id INTEGER,
+            subject TEXT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            answer TEXT,
+            is_answered INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            answered_at TEXT,
+            FOREIGN KEY (student_id) REFERENCES students(id),
+            FOREIGN KEY (teacher_id) REFERENCES teachers(id)
+        )""",
     ]:
         try:
             c.execute(sql)
@@ -252,7 +280,7 @@ if st.session_state.role == "student":
         st.markdown(f"### 👋 {info['name']} 학생")
         st.caption(f"{info['grade']} {info['class_name']} · {info['student_code']}")
         st.divider()
-        page = st.radio("메뉴", ["📋 내 과제 목록","✅ 제출 완료 목록","🎬 강의 영상"])
+        page = st.radio("메뉴", ["📋 내 과제 목록","✅ 제출 완료 목록","🎬 강의 영상","💬 질문하기"])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -359,6 +387,67 @@ if st.session_state.role == "student":
                                 with st.expander(f"🎬 {v['title']}"):
                                     st.components.v1.iframe(youtube_embed_url(v["youtube_url"]), height=380)
 
+    elif page == "💬 질문하기":
+        st.subheader("💬 질문하기")
+        tab1, tab2 = st.tabs(["새 질문", "내 질문 목록"])
+
+        with tab1:
+            conn = get_db()
+            teachers = conn.execute("SELECT id, name, subject FROM teachers ORDER BY subject").fetchall()
+            conn.close()
+            with st.form("ask_question"):
+                if teachers:
+                    t_options = {f"{t['subject']} · {t['name']}": t["id"] for t in teachers}
+                    t_options["선생님 미지정"] = None
+                    selected_t = st.selectbox("선생님 선택", list(t_options.keys()))
+                    t_id = t_options[selected_t]
+                    subject = dict([(t["id"], t["subject"]) for t in teachers]).get(t_id, "")
+                else:
+                    t_id = None
+                    subject = ""
+                    st.info("등록된 선생님이 없습니다.")
+                q_title   = st.text_input("제목 *", placeholder="예) 3강 2번 문제 질문")
+                q_content = st.text_area("질문 내용 *", placeholder="궁금한 내용을 자세히 적어주세요.", height=150)
+                if st.form_submit_button("질문 등록 ✅", type="primary", use_container_width=True):
+                    if not q_title.strip() or not q_content.strip():
+                        st.error("제목과 내용을 모두 입력해주세요.")
+                    else:
+                        conn = get_db()
+                        conn.execute(
+                            "INSERT INTO questions (student_id, teacher_id, subject, title, content) VALUES (?,?,?,?,?)",
+                            (sid, t_id, subject, q_title.strip(), q_content.strip()))
+                        conn.commit()
+                        conn.close()
+                        st.success("질문이 등록되었습니다! 선생님 답변을 기다려주세요. 📨")
+                        st.rerun()
+
+        with tab2:
+            conn = get_db()
+            questions = conn.execute("""
+                SELECT q.*, t.name AS teacher_name, t.subject
+                FROM questions q
+                LEFT JOIN teachers t ON q.teacher_id = t.id
+                WHERE q.student_id = ?
+                ORDER BY q.created_at DESC
+            """, (sid,)).fetchall()
+            conn.close()
+
+            if not questions:
+                st.info("아직 등록한 질문이 없습니다.")
+            else:
+                for q in questions:
+                    status = "✅ 답변 완료" if q["is_answered"] else "⏳ 답변 대기"
+                    teacher_tag = f" · {q['teacher_name']}" if q["teacher_name"] else ""
+                    with st.expander(f"{status}  |  {q['title']}{teacher_tag}  —  {q['created_at'][:10]}"):
+                        st.markdown(f"**질문:**")
+                        st.write(q["content"])
+                        if q["is_answered"] and q["answer"]:
+                            st.divider()
+                            st.markdown(f"**💬 선생님 답변** ({q['answered_at'][:10] if q['answered_at'] else ''}):")
+                            st.info(q["answer"])
+                        else:
+                            st.caption("아직 답변이 등록되지 않았습니다.")
+
     else:
         st.subheader("✅ 제출 완료 목록")
         conn = get_db()
@@ -402,7 +491,12 @@ elif st.session_state.role == "teacher":
         st.markdown(f"### 👩‍🏫 {tinfo['name']} 선생님")
         st.caption(f"과목: {tinfo['subject']}")
         st.divider()
-        page = st.radio("메뉴", ["📊 현황","📝 과제 등록","📋 과제 관리","🔍 제출 현황","🎬 영상 관리"])
+        # 미답변 질문 수 표시
+        conn = get_db()
+        unanswered = conn.execute("SELECT COUNT(*) FROM questions WHERE teacher_id=? AND is_answered=0", (tid,)).fetchone()[0]
+        conn.close()
+        q_label = f"💬 질문 관리  🔴{unanswered}" if unanswered else "💬 질문 관리"
+        page = st.radio("메뉴", ["📊 현황","📝 과제 등록","📋 과제 관리","🔍 제출 현황","🎬 영상 관리", q_label])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -548,6 +642,68 @@ elif st.session_state.role == "teacher":
                             conn.commit()
                             conn.close()
                             st.rerun()
+
+    elif "💬 질문 관리" in page:
+        st.subheader("💬 질문 관리")
+        tab1, tab2 = st.tabs(["미답변 질문", "전체 질문"])
+
+        for tab, answered_filter, empty_msg in [
+            (tab1, False, "미답변 질문이 없습니다. 🎉"),
+            (tab2, None,  "아직 질문이 없습니다.")
+        ]:
+            with tab:
+                conn = get_db()
+                if answered_filter is False:
+                    questions = conn.execute("""
+                        SELECT q.*, s.name AS student_name, s.grade, s.class_name
+                        FROM questions q
+                        JOIN students s ON q.student_id = s.id
+                        WHERE q.teacher_id=? AND q.is_answered=0
+                        ORDER BY q.created_at DESC
+                    """, (tid,)).fetchall()
+                else:
+                    questions = conn.execute("""
+                        SELECT q.*, s.name AS student_name, s.grade, s.class_name
+                        FROM questions q
+                        JOIN students s ON q.student_id = s.id
+                        WHERE q.teacher_id=?
+                        ORDER BY q.is_answered ASC, q.created_at DESC
+                    """, (tid,)).fetchall()
+                conn.close()
+
+                if not questions:
+                    st.info(empty_msg)
+                else:
+                    for q in questions:
+                        status = "✅ 답변 완료" if q["is_answered"] else "⏳ 미답변"
+                        student_tag = f"{q['student_name']} ({q['grade']} {q['class_name']})"
+                        with st.expander(f"{status}  |  {q['title']}  —  {student_tag}  {q['created_at'][:10]}"):
+                            st.markdown(f"**질문 내용:**")
+                            st.write(q["content"])
+                            st.divider()
+                            if q["is_answered"] and q["answer"]:
+                                st.markdown("**내 답변:**")
+                                st.success(q["answer"])
+                                st.caption(f"답변일: {q['answered_at'][:10] if q['answered_at'] else ''}")
+                            with st.form(f"answer_{q['id']}"):
+                                answer_text = st.text_area(
+                                    "답변 입력" if not q["is_answered"] else "답변 수정",
+                                    value=q["answer"] or "",
+                                    height=120
+                                )
+                                if st.form_submit_button("답변 등록 ✅" if not q["is_answered"] else "수정 저장", type="primary", use_container_width=True):
+                                    if not answer_text.strip():
+                                        st.error("답변 내용을 입력해주세요.")
+                                    else:
+                                        conn = get_db()
+                                        conn.execute("""
+                                            UPDATE questions SET answer=?, is_answered=1,
+                                            answered_at=datetime('now','localtime') WHERE id=?
+                                        """, (answer_text.strip(), q["id"]))
+                                        conn.commit()
+                                        conn.close()
+                                        st.success("답변이 등록되었습니다!")
+                                        st.rerun()
 
     elif page == "🎬 영상 관리":
         st.subheader("🎬 영상 관리")
