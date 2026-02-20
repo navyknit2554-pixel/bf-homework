@@ -1429,21 +1429,22 @@ elif st.session_state.role == "admin":
                 r_cols[0].markdown(f"**{p}교시**")
                 for i, d in enumerate(DAYS):
                     ec = tt_map.get((d, p), {})
-                    cur_subj = ec.get("subject") or ""
+                    cur_subj    = ec.get("subject") or ""
                     cur_teacher = ec.get("teacher_name") or ""
-                    # 현재 저장값이 목록에 있는지 확인
-                    cur_combo = f"{cur_subj} - {cur_teacher}" if cur_subj and cur_teacher else None
-                    if cur_combo and cur_combo in subject_options:
-                        default_idx = subject_options.index(cur_combo)
-                    elif cur_subj:
-                        default_idx = 0  # 커스텀 값은 일단 비어있음으로
-                    else:
-                        default_idx = 0
+                    cur_combo   = f"{cur_subj} - {cur_teacher}" if cur_subj and cur_teacher else None
+                    widget_key  = f"tt_{sel_grade}_{sel_class}_{d}_{p}"
+
+                    # session_state에 값이 없을 때만 DB 저장값으로 초기화
+                    # → 사용자가 선택한 값이 rerun 때 덮어써지지 않음
+                    if widget_key not in st.session_state:
+                        if cur_combo and cur_combo in subject_options:
+                            st.session_state[widget_key] = cur_combo
+                        else:
+                            st.session_state[widget_key] = EMPTY
 
                     sel = r_cols[i+1].selectbox(
                         "", subject_options,
-                        index=default_idx,
-                        key=f"tt_{sel_grade}_{sel_class}_{d}_{p}",
+                        key=widget_key,
                         label_visibility="collapsed"
                     )
                     if sel == EMPTY:
@@ -1466,6 +1467,12 @@ elif st.session_state.role == "admin":
                     """, (sel_grade, sel_class, d, p, subj or None, t_name or None))
                 conn.commit()
                 conn.close()
+                # 저장 후 session_state 초기화 → DB 최신값으로 다시 로드
+                for p in PERIODS:
+                    for d in DAYS:
+                        k = f"tt_{sel_grade}_{sel_class}_{d}_{p}"
+                        if k in st.session_state:
+                            del st.session_state[k]
                 st.success(f"✅ {sel_grade} {sel_class} 주간 시간표가 저장되었습니다!")
                 st.rerun()
 
