@@ -45,6 +45,14 @@ def create_parent_account(student):
     finally:
         conn.close()
 
+def sync_all_parent_accounts():
+    """기존 학생 전체에 대해 학부모 계정 일괄 생성 (없는 경우에만)."""
+    conn = get_db()
+    students = conn.execute("SELECT * FROM students").fetchall()
+    conn.close()
+    for s in students:
+        create_parent_account(dict(s))
+
 def youtube_embed_url(url):
     for p in [r"youtube\.com/watch\?v=([a-zA-Z0-9_-]+)",
               r"youtu\.be/([a-zA-Z0-9_-]+)",
@@ -291,6 +299,9 @@ def get_classes(grade=None):
 for key in ["role","student_id","student_info","teacher_id","teacher_info","parent_id","parent_info","pending_register"]:
     if key not in st.session_state:
         st.session_state[key] = None
+
+# 기존 학생 전체 학부모 계정 동기화 (앱 시작 시 1회)
+sync_all_parent_accounts()
 
 st.title("📚 패스파인더 학생 과제 제출 프로그램")
 st.caption("Pathfinder Korean Academy")
@@ -2285,6 +2296,25 @@ elif st.session_state.role == "admin":
                                 st.rerun()
 
                     with edit_tab3:
+                        # 학부모 계정 정보
+                        p_username = str(sel_info["student_code"]) + "p"
+                        conn = get_db()
+                        p_row = conn.execute("SELECT * FROM parents WHERE username=?", (p_username,)).fetchone()
+                        conn.close()
+                        if p_row:
+                            st.info(f"📱 학부모 아이디: **{p_username}**")
+                        else:
+                            st.warning(f"학부모 계정 없음 (아이디: {p_username})")
+                        if st.button("🔄 학부모 비밀번호 초기화 (→ 학생 이름)", key=f"reset_pw_{sel_info['id']}"):
+                            create_parent_account(dict(sel_info))
+                            # 이미 있으면 비번만 재설정
+                            conn = get_db()
+                            conn.execute("UPDATE parents SET password_hash=? WHERE username=?",
+                                         (hash_pw(sel_info["name"]), p_username))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"✅ 학부모 비밀번호가 **{sel_info['name']}** 으로 초기화되었습니다.")
+                        st.divider()
                         st.warning(f"**{sel_info['name']}** 학생을 삭제하면 제출 기록과 배정 정보도 함께 삭제됩니다.")
                         confirm_del = st.text_input("삭제하려면 학생 이름을 정확히 입력하세요")
                         if st.button("🗑 영구 삭제", type="primary", use_container_width=True):
@@ -2292,6 +2322,7 @@ elif st.session_state.role == "admin":
                                 conn = get_db()
                                 conn.execute("DELETE FROM student_teachers WHERE student_id=?", (sel_info["id"],))
                                 conn.execute("DELETE FROM submissions WHERE student_id=?", (sel_info["id"],))
+                                conn.execute("DELETE FROM parents WHERE username=?", (p_username,))
                                 conn.execute("DELETE FROM students WHERE id=?", (sel_info["id"],))
                                 conn.commit()
                                 conn.close()
