@@ -1303,18 +1303,33 @@ elif st.session_state.role == "admin":
         # ── 주간 시간표 편집 ──
         with tab_tt:
             st.markdown(f"#### {sel_grade} {sel_class} 주간 시간표")
-            st.caption("빈칸으로 두면 해당 교시는 비어있음으로 처리됩니다.")
+
+            # 선생님 목록 + 과목 목록 로드
             conn = get_db()
+            teachers_list = conn.execute("SELECT id, name, subject FROM teachers ORDER BY subject").fetchall()
             existing = conn.execute(
                 "SELECT * FROM timetable WHERE grade=? AND class_name=?",
                 (sel_grade, sel_class)).fetchall()
             conn.close()
             tt_map = {(r["day"], r["period"]): dict(r) for r in existing}
 
+            # 선택 옵션: "과목 - 선생님" 형태
+            EMPTY = "— 비어있음 —"
+            subject_options = [EMPTY] + [
+                f"{t['subject']} - {t['name']}" for t in teachers_list
+            ]
+            # 과목명만 추출 (중복 제거, 커스텀 과목 추가용)
+            existing_subjects = set()
+            for r in existing:
+                if r["subject"]: existing_subjects.add(r["subject"])
+
+            st.caption(f"등록된 선생님 {len(teachers_list)}명의 과목을 선택하거나 직접 입력하세요.")
+
             h_cols = st.columns([1]+[3]*len(DAYS))
             h_cols[0].markdown("**교시**")
             for i, d in enumerate(DAYS):
                 h_cols[i+1].markdown(f"**{d}요일**")
+            st.divider()
 
             inputs, teacher_inputs = {}, {}
             for p in PERIODS:
@@ -1322,24 +1337,30 @@ elif st.session_state.role == "admin":
                 r_cols[0].markdown(f"**{p}교시**")
                 for i, d in enumerate(DAYS):
                     ec = tt_map.get((d, p), {})
-                    subj = r_cols[i+1].text_input("",
-                        value=ec.get("subject",""),
-                        key=f"tt_{sel_grade}_{sel_class}_{d}_{p}",
-                        placeholder="과목", label_visibility="collapsed")
-                    inputs[(d, p)] = (subj or "").strip()
+                    cur_subj = ec.get("subject") or ""
+                    cur_teacher = ec.get("teacher_name") or ""
+                    # 현재 저장값이 목록에 있는지 확인
+                    cur_combo = f"{cur_subj} - {cur_teacher}" if cur_subj and cur_teacher else None
+                    if cur_combo and cur_combo in subject_options:
+                        default_idx = subject_options.index(cur_combo)
+                    elif cur_subj:
+                        default_idx = 0  # 커스텀 값은 일단 비어있음으로
+                    else:
+                        default_idx = 0
 
-            with st.expander("👩‍🏫 담당 선생님 이름 입력 (선택)"):
-                for p in PERIODS:
-                    t_cols = st.columns([1]+[3]*len(DAYS))
-                    t_cols[0].markdown(f"**{p}교시**")
-                    for i, d in enumerate(DAYS):
-                        ec = tt_map.get((d, p), {})
-                        if inputs.get((d, p)):
-                            t_name = t_cols[i+1].text_input("",
-                                value=ec.get("teacher_name",""),
-                                key=f"tt_t_{sel_grade}_{sel_class}_{d}_{p}",
-                                placeholder="선생님", label_visibility="collapsed")
-                            teacher_inputs[(d, p)] = (t_name or "").strip()
+                    sel = r_cols[i+1].selectbox(
+                        "", subject_options,
+                        index=default_idx,
+                        key=f"tt_{sel_grade}_{sel_class}_{d}_{p}",
+                        label_visibility="collapsed"
+                    )
+                    if sel == EMPTY:
+                        inputs[(d, p)] = ""
+                        teacher_inputs[(d, p)] = ""
+                    else:
+                        parts = sel.split(" - ", 1)
+                        inputs[(d, p)] = parts[0].strip()
+                        teacher_inputs[(d, p)] = parts[1].strip() if len(parts) > 1 else ""
 
             if st.button("💾 주간 시간표 저장", type="primary", use_container_width=True, key="save_tt"):
                 conn = get_db()
