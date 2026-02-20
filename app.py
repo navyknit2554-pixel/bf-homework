@@ -1823,7 +1823,12 @@ elif st.session_state.role == "admin":
                 st.dataframe(df, use_container_width=True, hide_index=True)
                 st.divider()
                 st.markdown("#### 📱 연락처 등록/수정")
-                s_options = {f"{s['name']} ({s['grade']} {s['class_name']})": s["id"] for s in students}
+                search_q = st.text_input("🔍 학생 이름 검색", placeholder="이름 입력...", key="student_search")
+                filtered = [s for s in students if search_q.strip().lower() in s["name"].lower()] if search_q.strip() else students
+                if not filtered:
+                    st.warning("검색 결과가 없습니다.")
+                    st.stop()
+                s_options = {f"{s['name']} ({s['grade']} {s['class_name']})": s["id"] for s in filtered}
                 sel_s     = st.selectbox("학생 선택", list(s_options.keys()), key="phone_student")
                 sel_id    = s_options[sel_s]
                 sel_info  = next(s for s in students if s["id"] == sel_id)
@@ -1935,7 +1940,12 @@ elif st.session_state.role == "admin":
                 if not all_students:
                     st.info("등록된 학생이 없습니다.")
                 else:
-                    s_opts = {f"{s['name']} ({s['grade']} {s['class_name']})": s for s in all_students}
+                    assign_search = st.text_input("🔍 학생 이름 검색", placeholder="이름 입력...", key="assign_search")
+                    filtered_a = [s for s in all_students if assign_search.strip().lower() in s["name"].lower()] if assign_search.strip() else all_students
+                    if not filtered_a:
+                        st.warning("검색 결과가 없습니다.")
+                        st.stop()
+                    s_opts = {f"{s['name']} ({s['grade']} {s['class_name']})": s for s in filtered_a}
                     sel_name = st.selectbox("학생 선택", list(s_opts.keys()), key="assign_sel")
                     sel_s = s_opts[sel_name]
 
