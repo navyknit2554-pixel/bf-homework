@@ -60,6 +60,67 @@ def sync_all_parent_accounts():
     except Exception:
         pass
 
+def render_timetable_html(tt_dict, pt_map, days, periods, highlight_fn=None):
+    """모바일 대응 HTML 테이블 시간표 렌더러.
+    tt_dict: {(day, period): row} 또는 {(day, period): [row, ...]}
+    highlight_fn(cell): True면 초록 강조, None이면 기본 파랑
+    """
+    cell_style  = "background:#1e3a5f;border-radius:6px;padding:8px 6px;text-align:center;font-size:0.82rem;"
+    hl_style    = "background:#1a4a2a;border:2px solid #22c55e;border-radius:6px;padding:8px 6px;text-align:center;font-size:0.82rem;"
+    empty_style = "background:#0d1117;border-radius:6px;padding:8px 6px;text-align:center;color:#334155;font-size:0.82rem;"
+
+    html = """
+    <style>
+    .tt-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .tt-table { border-collapse: separate; border-spacing: 4px; min-width: 480px; width: 100%; }
+    .tt-table th { background:#1e293b; color:#94a3b8; font-size:0.8rem; padding:8px 4px; text-align:center; border-radius:6px; }
+    .tt-period { background:#111827; border-left:3px solid #3b82f6; border-radius:4px; padding:8px 6px; min-width:72px; }
+    .tt-period b { font-size:0.9rem; }
+    .tt-time { font-size:0.75rem; color:#93c5fd; font-weight:500; display:block; margin-top:2px; }
+    .tt-sub { font-weight:bold; display:block; }
+    .tt-teacher { color:#94a3b8; font-size:0.72rem; display:block; margin-top:2px; }
+    .tt-class { font-weight:bold; display:block; }
+    </style>
+    <div class="tt-wrap"><table class="tt-table">
+    <thead><tr><th>교시</th>"""
+    for d in days:
+        html += f"<th>{d}요일</th>"
+    html += "</tr></thead><tbody>"
+
+    for p in periods:
+        pt = pt_map.get(p)
+        time_str = ""
+        if pt and pt["start_time"]:
+            time_str = f"{pt['start_time']}~{pt['end_time']}" if pt.get("end_time") else pt["start_time"]
+        time_html = f'<span class="tt-time">{time_str}</span>' if time_str else ""
+        html += f'<tr><td><div class="tt-period"><b>{p}교시</b>{time_html}</div></td>'
+
+        for d in days:
+            val = tt_dict.get((d, p))
+            if val is None:
+                html += f'<td><div style="{empty_style}">—</div></td>'
+            elif isinstance(val, list):
+                # 여러 반 (선생님 시간표)
+                inner = ""
+                for c in val:
+                    is_hl = highlight_fn(c) if highlight_fn else False
+                    s = hl_style if is_hl else cell_style
+                    cls_label = f'<span class="tt-class">{c["grade"]} {c["class_name"]}</span>'
+                    sub_label = f'<span class="tt-teacher">{c["subject"]}</span>'
+                    inner += f'<div style="{s};margin-bottom:3px;">{cls_label}{sub_label}</div>'
+                html += f'<td>{inner}</td>'
+            else:
+                # 단일 셀 (학생/학부모 시간표)
+                is_hl = highlight_fn(val) if highlight_fn else False
+                s = hl_style if is_hl else cell_style
+                sub  = val.get("subject") or "—"
+                tchr = val.get("teacher_name") or ""
+                html += f'<td><div style="{s}"><span class="tt-sub">{sub}</span><span class="tt-teacher">{tchr}</span></div></td>'
+        html += "</tr>"
+
+    html += "</tbody></table></div>"
+    return html
+
 def youtube_embed_url(url):
     for p in [r"youtube\.com/watch\?v=([a-zA-Z0-9_-]+)",
               r"youtu\.be/([a-zA-Z0-9_-]+)",
@@ -317,6 +378,18 @@ st.markdown("""
 div[data-testid="stRadio"] > div { display: flex; flex-direction: column; gap: 6px; }
 div[data-testid="stRadio"] label { padding: 6px 10px !important; border-radius: 6px; }
 </style>
+<script>
+// 사이드바 메뉴 클릭 시 모바일에서 자동 닫기
+document.addEventListener('click', function(e) {
+    var label = e.target.closest('div[data-testid="stRadio"] label');
+    if (label) {
+        setTimeout(function() {
+            var closeBtn = document.querySelector('[data-testid="stSidebarCollapseButton"]');
+            if (closeBtn && window.innerWidth < 768) closeBtn.click();
+        }, 150);
+    }
+});
+</script>
 """, unsafe_allow_html=True)
 st.divider()
 
@@ -801,39 +874,7 @@ if st.session_state.role == "student":
             else:
                 tt = {(r["day"], r["period"]): r for r in rows}
                 pt_map_s = {r["period"]: r for r in pt_rows_s}
-
-                h_cols = st.columns([1]+[2]*len(DAYS))
-                h_cols[0].markdown("**교시**")
-                for i, d in enumerate(DAYS):
-                    h_cols[i+1].markdown(f"**{d}요일**")
-                st.divider()
-                for p in PERIODS_S:
-                    st.markdown("<hr style='margin:2px 0;border:none;border-top:1px solid #1e293b;'>", unsafe_allow_html=True)
-                    r_cols = st.columns([1]+[2]*len(DAYS))
-                    pt = pt_map_s.get(p)
-                    row_bg = "#111827" if p % 2 == 1 else "#0d1117"
-                    if pt and pt["start_time"]:
-                        time_label = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
-                        r_cols[0].markdown(
-                            f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
-                            f"<span style='font-size:0.95rem;font-weight:bold;'>{p}교시</span><br><span style='font-size:0.78rem;color:#93c5fd;font-weight:500;'>{time_label}</span></div>",
-                            unsafe_allow_html=True)
-                    else:
-                        r_cols[0].markdown(
-                            f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
-                            f"<b>{p}교시</b></div>", unsafe_allow_html=True)
-                    for i, d in enumerate(DAYS):
-                        cell = tt.get((d, p))
-                        if cell and cell["subject"]:
-                            r_cols[i+1].markdown(
-                                f"<div style='background:#1e3a5f;border-radius:6px;padding:6px 8px;text-align:center;font-size:0.85rem;margin:2px;'>"
-                                f"<b>{cell['subject']}</b>"
-                                f"<div style='color:#94a3b8;font-size:0.75rem;'>{cell['teacher_name'] or ''}</div>"
-                                f"</div>", unsafe_allow_html=True)
-                        else:
-                            r_cols[i+1].markdown(
-                                f"<div style='background:{row_bg};border-radius:6px;padding:6px 8px;text-align:center;color:#334155;font-size:0.85rem;margin:2px;'>—</div>",
-                                unsafe_allow_html=True)
+                st.markdown(render_timetable_html(tt, pt_map_s, DAYS, PERIODS_S), unsafe_allow_html=True)
 
         # ── 날짜별 일정 탭 ──
         with tab_sch:
@@ -1151,36 +1192,7 @@ elif st.session_state.role == "parent":
         else:
             tt_p = {(r["day"], r["period"]): r for r in rows_p}
             pt_map_p2 = {r["period"]: r for r in pt_rows_p}
-            h_cols = st.columns([1]+[2]*len(DAYS_P))
-            h_cols[0].markdown("**교시**")
-            for i, d in enumerate(DAYS_P): h_cols[i+1].markdown(f"**{d}요일**")
-            st.divider()
-            for p in PERIODS_P:
-                st.markdown("<hr style='margin:2px 0;border:none;border-top:1px solid #1e293b;'>", unsafe_allow_html=True)
-                r_cols = st.columns([1]+[2]*len(DAYS_P))
-                pt2 = pt_map_p2.get(p)
-                row_bg = "#111827" if p % 2 == 1 else "#0d1117"
-                if pt2 and pt2["start_time"]:
-                    tl = f"{pt2['start_time']}~{pt2['end_time']}" if pt2["end_time"] else pt2["start_time"]
-                    r_cols[0].markdown(
-                        f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
-                        f"<span style='font-size:0.95rem;font-weight:bold;'>{p}교시</span><br><span style='font-size:0.78rem;color:#93c5fd;font-weight:500;'>{tl}</span></div>",
-                        unsafe_allow_html=True)
-                else:
-                    r_cols[0].markdown(
-                        f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
-                        f"<b>{p}교시</b></div>", unsafe_allow_html=True)
-                for i, d in enumerate(DAYS_P):
-                    cell = tt_p.get((d, p))
-                    if cell and cell["subject"]:
-                        r_cols[i+1].markdown(
-                            f"<div style='background:#1e3a5f;border-radius:6px;padding:6px 8px;text-align:center;font-size:0.85rem;margin:2px;'>"
-                            f"<b>{cell['subject']}</b><div style='color:#94a3b8;font-size:0.75rem;'>{cell['teacher_name'] or ''}</div>"
-                            f"</div>", unsafe_allow_html=True)
-                    else:
-                        r_cols[i+1].markdown(
-                            f"<div style='background:{row_bg};border-radius:6px;padding:6px 8px;text-align:center;color:#334155;font-size:0.85rem;margin:2px;'>—</div>",
-                            unsafe_allow_html=True)
+            st.markdown(render_timetable_html(tt_p, pt_map_p2, DAYS_P, PERIODS_P), unsafe_allow_html=True)
 
     # ── 비밀번호 변경 ──────────────────────────────────────────────
     elif page == "🔐 비밀번호 변경":
@@ -1303,52 +1315,11 @@ elif st.session_state.role == "teacher":
             for r in my_tt_all:
                 key = (r["day"], r["period"])
                 tt_combined.setdefault(key, []).append(r)
-
             pt_map_t = {r["period"]: r for r in pt_rows_t}
-
-            # 헤더
-            h_cols = st.columns([1]+[2]*len(DAYS))
-            h_cols[0].markdown("**교시**")
-            for i, d in enumerate(DAYS):
-                h_cols[i+1].markdown(f"**{d}요일**")
-
-            for p in PERIODS_T:
-                st.markdown("<hr style='margin:2px 0;border:none;border-top:1px solid #1e293b;'>", unsafe_allow_html=True)
-                r_cols = st.columns([1]+[2]*len(DAYS))
-                pt = pt_map_t.get(p)
-                row_bg = "#111827" if p % 2 == 1 else "#0d1117"
-                if pt and pt["start_time"]:
-                    time_label = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
-                    r_cols[0].markdown(
-                        f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
-                        f"<span style='font-size:0.95rem;font-weight:bold;'>{p}교시</span><br><span style='font-size:0.78rem;color:#93c5fd;font-weight:500;'>{time_label}</span></div>",
-                        unsafe_allow_html=True)
-                else:
-                    r_cols[0].markdown(
-                        f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'>"
-                        f"<b>{p}교시</b></div>", unsafe_allow_html=True)
-
-                for i, d in enumerate(DAYS):
-                    cells = tt_combined.get((d, p), [])
-                    # 내 수업만 필터
-                    my_cells = [c for c in cells if (c["teacher_name"] or "").strip() == tinfo["name"].strip()]
-                    if my_cells:
-                        # 한 칸에 여러 반이면 모두 표시
-                        inner_html = ""
-                        for c in my_cells:
-                            inner_html += (
-                                f"<div style='background:#1a4a2a;border:2px solid #22c55e;border-radius:6px;"
-                                f"padding:6px 8px;text-align:center;font-size:0.82rem;margin-bottom:3px;'>"
-                                f"<b>{c['grade']} {c['class_name']}</b>"
-                                f"<div style='color:#86efac;font-size:0.72rem;'>{c['subject']}</div>"
-                                f"</div>"
-                            )
-                        r_cols[i+1].markdown(inner_html, unsafe_allow_html=True)
-                    else:
-                        r_cols[i+1].markdown(
-                            f"<div style='background:{row_bg};border-radius:6px;padding:6px 8px;"
-                            f"text-align:center;color:#1e293b;font-size:0.82rem;'>—</div>",
-                            unsafe_allow_html=True)
+            st.markdown(render_timetable_html(
+                tt_combined, pt_map_t, DAYS, PERIODS_T,
+                highlight_fn=lambda c: (c["teacher_name"] or "").strip() == tinfo["name"].strip()
+            ), unsafe_allow_html=True)
         st.divider()
         st.divider()
         st.subheader("📬 최근 제출")
