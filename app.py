@@ -2438,11 +2438,12 @@ elif st.session_state.role == "admin":
                 st.dataframe(df, use_container_width=True, hide_index=True)
 
                 st.divider()
-                st.markdown("#### 학생을 선택해 수정하세요")
-                for s in students:
-                    cur_g = calc_current_grade(s["base_grade"] or s["grade"], s["enrollment_year"]) if s["enrollment_year"] else s["grade"]
-                    if st.button(f"✏️  {s['name']}  ({cur_g} {s['class_name']})", key=f"sel_stu_{s['id']}", use_container_width=True):
-                        st.session_state.admin_selected_student = s["id"]
+                st.markdown("#### ✏️ 학생 선택해서 수정")
+                sel_opts = {f"{s['name']}  ({s['grade']} {s['class_name']})  학번: {s['student_code']}": s["id"] for s in students}
+                sel_label = st.selectbox("학생 선택", ["— 선택하세요 —"] + list(sel_opts.keys()), key="list_stu_sel")
+                if sel_label != "— 선택하세요 —":
+                    if st.button("수정 페이지로 이동 →", type="primary", use_container_width=True):
+                        st.session_state.admin_selected_student = sel_opts[sel_label]
                         st.rerun()
 
         # ── 학생 등록 ──────────────────────────────────────────────
