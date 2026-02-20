@@ -1,12 +1,9 @@
 import streamlit as st
 import sqlite3
 import os
-import hashlib
 from datetime import datetime, date
 from pathlib import Path
 import base64
-from PIL import Image
-import io
 
 # ── 기본 설정 ──────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -21,52 +18,254 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 ADMIN_PASSWORD = "pathfinder2024"  # 관리자 비밀번호 (변경 가능)
 
-# ── CSS ────────────────────────────────────────────────────────────────────────
+# ── 키젠과 동일한 해시 함수 (JS djb2 완전 동일) ──────────────────────────────
+def name_to_code(name: str) -> str:
+    h = 5381
+    for ch in name.strip():
+        h = ((h * 33) ^ ord(ch)) & 0xFFFFFFFF
+    return str((h % 900000) + 100000)
+
+def verify_code(name: str, code: str) -> bool:
+    return name_to_code(name.strip()) == code.strip()
+
+# ── CSS (키젠과 동일한 다크 테마) ───────────────────────────────────────────
 st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
-    .main-header {
-        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-        color: white;
-        padding: 1.5rem 2rem;
-        border-radius: 12px;
-        margin-bottom: 1.5rem;
-        text-align: center;
-    }
-    .main-header h1 { margin: 0; font-size: 1.8rem; }
-    .main-header p { margin: 0.3rem 0 0; opacity: 0.85; font-size: 0.95rem; }
+/* ── 전체 배경 ── */
+html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
+    background-color: #0a0e1a !important;
+    color: #e2e8f0 !important;
+    font-family: 'Noto Sans KR', sans-serif !important;
+}
 
-    .card {
-        background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 10px;
-        padding: 1.2rem 1.5rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    }
-    .card-title { font-weight: 700; font-size: 1rem; color: #1e3a8a; margin-bottom: 0.4rem; }
-    .card-sub { color: #6b7280; font-size: 0.85rem; }
+/* 그리드 배경 */
+[data-testid="stAppViewContainer"]::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(0,102,255,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,102,255,0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+}
 
-    .badge-pending  { background:#fef3c7; color:#92400e; padding:2px 10px; border-radius:12px; font-size:0.78rem; font-weight:600; }
-    .badge-done     { background:#d1fae5; color:#065f46; padding:2px 10px; border-radius:12px; font-size:0.78rem; font-weight:600; }
-    .badge-late     { background:#fee2e2; color:#991b1b; padding:2px 10px; border-radius:12px; font-size:0.78rem; font-weight:600; }
-    .badge-checked  { background:#dbeafe; color:#1e40af; padding:2px 10px; border-radius:12px; font-size:0.78rem; font-weight:600; }
+/* ── 사이드바 ── */
+[data-testid="stSidebar"] {
+    background-color: #0d1323 !important;
+    border-right: 1px solid #1e3a5f !important;
+}
+[data-testid="stSidebar"] * { color: #e2e8f0 !important; }
+[data-testid="stSidebar"] .stRadio label { color: #cbd5e1 !important; font-size: 0.9rem !important; }
+[data-testid="stSidebar"] hr { border-color: #1e3a5f !important; }
 
-    .stat-box {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 1rem;
-        text-align: center;
-    }
-    .stat-num { font-size: 2rem; font-weight: 800; color: #1e3a8a; }
-    .stat-label { font-size: 0.8rem; color: #64748b; margin-top: 2px; }
+/* ── 메인 콘텐츠 패딩 ── */
+[data-testid="stMainBlockContainer"] { padding-top: 1.5rem !important; }
+section.main > div { background: transparent !important; }
 
-    div[data-testid="stButton"] button {
-        border-radius: 8px;
-    }
-    .stSuccess, .stError, .stWarning, .stInfo {
-        border-radius: 8px;
-    }
+/* ── 텍스트 전체 ── */
+h1, h2, h3, h4, h5, h6, p, span, label, div {
+    color: #e2e8f0 !important;
+    font-family: 'Noto Sans KR', sans-serif !important;
+}
+h1 { font-size: 1.6rem !important; font-weight: 700 !important; }
+h2 { font-size: 1.3rem !important; font-weight: 600 !important; color: #00d4ff !important; }
+h3 { font-size: 1.1rem !important; font-weight: 600 !important; }
+
+/* ── 입력창 ── */
+input, textarea, [data-baseweb="input"] input, [data-baseweb="textarea"] textarea {
+    background-color: rgba(0,0,0,0.5) !important;
+    border: 1px solid #1e3a5f !important;
+    border-radius: 8px !important;
+    color: #ffffff !important;
+    font-family: 'Noto Sans KR', sans-serif !important;
+}
+input:focus, textarea:focus {
+    border-color: #00d4ff !important;
+    box-shadow: 0 0 0 3px rgba(0,212,255,0.1) !important;
+}
+input::placeholder, textarea::placeholder { color: #4a5568 !important; }
+
+/* ── 셀렉트박스 ── */
+[data-baseweb="select"] > div {
+    background-color: rgba(0,0,0,0.5) !important;
+    border: 1px solid #1e3a5f !important;
+    border-radius: 8px !important;
+    color: #e2e8f0 !important;
+}
+[data-baseweb="popover"] { background-color: #111827 !important; border: 1px solid #1e3a5f !important; }
+[data-baseweb="menu"] { background-color: #111827 !important; }
+[role="option"] { background-color: #111827 !important; color: #e2e8f0 !important; }
+[role="option"]:hover { background-color: #1e3a5f !important; }
+
+/* ── 버튼 ── */
+button[kind="primary"], [data-testid="stBaseButton-primary"] {
+    background: linear-gradient(135deg, #0066ff, #00d4ff) !important;
+    border: none !important;
+    color: white !important;
+    border-radius: 8px !important;
+    font-family: 'Noto Sans KR', sans-serif !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.03em !important;
+    transition: opacity 0.15s !important;
+}
+button[kind="secondary"], [data-testid="stBaseButton-secondary"] {
+    background: transparent !important;
+    border: 1px solid #1e3a5f !important;
+    color: #e2e8f0 !important;
+    border-radius: 8px !important;
+    font-family: 'Noto Sans KR', sans-serif !important;
+}
+button[kind="secondary"]:hover, [data-testid="stBaseButton-secondary"]:hover {
+    border-color: #00d4ff !important;
+    color: #00d4ff !important;
+}
+button { border-radius: 8px !important; }
+
+/* ── 알림창 ── */
+[data-testid="stAlert"] {
+    border-radius: 10px !important;
+    border: 1px solid #1e3a5f !important;
+}
+[data-testid="stAlert"][data-baseweb="notification"] {
+    background-color: rgba(0,212,255,0.08) !important;
+}
+div[data-testid="stNotificationContentInfo"] {
+    background-color: rgba(0,212,255,0.08) !important;
+    border: 1px solid rgba(0,212,255,0.25) !important;
+    border-radius: 10px !important;
+}
+div[data-testid="stNotificationContentSuccess"] {
+    background-color: rgba(0,255,136,0.08) !important;
+    border: 1px solid rgba(0,255,136,0.25) !important;
+    border-radius: 10px !important;
+}
+div[data-testid="stNotificationContentError"] {
+    background-color: rgba(255,80,80,0.08) !important;
+    border: 1px solid rgba(255,80,80,0.25) !important;
+    border-radius: 10px !important;
+}
+div[data-testid="stNotificationContentWarning"] {
+    background-color: rgba(255,200,0,0.08) !important;
+    border: 1px solid rgba(255,200,0,0.25) !important;
+    border-radius: 10px !important;
+}
+
+/* ── 데이터프레임 ── */
+[data-testid="stDataFrame"], iframe {
+    border: 1px solid #1e3a5f !important;
+    border-radius: 10px !important;
+    background: #0d1323 !important;
+}
+
+/* ── 익스팬더 ── */
+[data-testid="stExpander"] {
+    background-color: #111827 !important;
+    border: 1px solid #1e3a5f !important;
+    border-radius: 10px !important;
+    margin-bottom: 0.5rem !important;
+}
+[data-testid="stExpander"]:hover { border-color: #00d4ff !important; }
+details summary { color: #e2e8f0 !important; }
+details > div { background-color: #0d1323 !important; }
+
+/* ── 탭 ── */
+[data-testid="stTabs"] button {
+    color: #64748b !important;
+    border-bottom: 2px solid transparent !important;
+    background: transparent !important;
+    font-family: 'Noto Sans KR', sans-serif !important;
+}
+[data-testid="stTabs"] button[aria-selected="true"] {
+    color: #00d4ff !important;
+    border-bottom-color: #00d4ff !important;
+}
+
+/* ── 구분선 ── */
+hr { border-color: #1e3a5f !important; }
+
+/* ── 파일 업로더 ── */
+[data-testid="stFileUploader"] {
+    background: rgba(0,0,0,0.3) !important;
+    border: 1px dashed #1e3a5f !important;
+    border-radius: 10px !important;
+}
+[data-testid="stFileUploader"]:hover { border-color: #00d4ff !important; }
+
+/* ── 메트릭 ── */
+[data-testid="stMetric"] {
+    background: #111827 !important;
+    border: 1px solid #1e3a5f !important;
+    border-radius: 10px !important;
+    padding: 1rem !important;
+}
+[data-testid="stMetricValue"] { color: #00d4ff !important; font-family: 'Share Tech Mono', monospace !important; }
+[data-testid="stMetricLabel"] { color: #64748b !important; }
+
+/* ── 프로그레스바 ── */
+[data-testid="stProgressBar"] > div {
+    background-color: #1e3a5f !important;
+    border-radius: 4px !important;
+}
+[data-testid="stProgressBar"] > div > div {
+    background: linear-gradient(90deg, #0066ff, #00d4ff) !important;
+}
+
+/* ── 커스텀 컴포넌트 ── */
+.main-header {
+    background: linear-gradient(135deg, #0a1628 0%, #0d2347 50%, #0a1628 100%);
+    border: 1px solid #1e3a5f;
+    border-top: 2px solid #00d4ff;
+    color: white;
+    padding: 1.8rem 2rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+.main-header::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 60%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(0,212,255,0.05), transparent);
+    animation: shimmer 4s infinite;
+}
+@keyframes shimmer { to { left: 150%; } }
+.main-header h1 { margin: 0; font-size: 1.7rem !important; color: white !important; }
+.main-header .sub { color: #00d4ff; font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase; margin-bottom: 0.5rem; opacity: 0.85; }
+.main-header p { margin: 0.3rem 0 0; opacity: 0.6; font-size: 0.85rem !important; color: #94a3b8 !important; }
+
+.stat-box {
+    background: #111827;
+    border: 1px solid #1e3a5f;
+    border-radius: 10px;
+    padding: 1.2rem;
+    text-align: center;
+    transition: border-color 0.2s;
+}
+.stat-box:hover { border-color: #00d4ff; }
+.stat-num { font-family: 'Share Tech Mono', monospace; font-size: 2.2rem; color: #00d4ff !important; text-shadow: 0 0 12px rgba(0,212,255,0.4); }
+.stat-label { font-size: 0.78rem; color: #64748b !important; margin-top: 4px; letter-spacing: 0.05em; }
+
+.badge-pending  { background:rgba(255,200,0,0.12); color:#fbbf24; padding:3px 12px; border-radius:12px; font-size:0.78rem; font-weight:600; border:1px solid rgba(251,191,36,0.3); }
+.badge-done     { background:rgba(0,255,136,0.1);  color:#00ff88; padding:3px 12px; border-radius:12px; font-size:0.78rem; font-weight:600; border:1px solid rgba(0,255,136,0.3); }
+.badge-late     { background:rgba(255,80,80,0.1);  color:#ff6b6b; padding:3px 12px; border-radius:12px; font-size:0.78rem; font-weight:600; border:1px solid rgba(255,107,107,0.3); }
+.badge-checked  { background:rgba(0,212,255,0.1);  color:#00d4ff; padding:3px 12px; border-radius:12px; font-size:0.78rem; font-weight:600; border:1px solid rgba(0,212,255,0.3); }
+
+/* ── 캡션/스몰 텍스트 ── */
+small, [data-testid="stCaptionContainer"], .stCaption {
+    color: #4a5568 !important;
+}
+
+/* ── 라디오버튼 ── */
+[data-testid="stRadio"] label { color: #cbd5e1 !important; }
+
+/* ── 날짜 입력 ── */
+[data-baseweb="datepicker"] input { background: rgba(0,0,0,0.5) !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -116,19 +315,6 @@ def init_db():
         );
     """)
     conn.commit()
-
-    # 샘플 데이터 (최초 1회)
-    if c.execute("SELECT COUNT(*) FROM students").fetchone()[0] == 0:
-        sample_students = [
-            ("김민준", "S001", "중1", "A반"),
-            ("이서연", "S002", "중1", "A반"),
-            ("박지호", "S003", "중1", "B반"),
-            ("최하은", "S004", "중2", "A반"),
-            ("정도윤", "S005", "중2", "B반"),
-        ]
-        c.executemany("INSERT INTO students (name, student_code, grade, class_name) VALUES (?,?,?,?)", sample_students)
-        conn.commit()
-
     conn.close()
 
 init_db()
@@ -157,51 +343,102 @@ def get_classes(grade=None):
     conn.close()
     return [r["class_name"] for r in rows]
 
-def image_to_base64(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
 # ── 세션 초기화 ────────────────────────────────────────────────────────────────
-if "role" not in st.session_state:
-    st.session_state.role = None
-if "student_id" not in st.session_state:
-    st.session_state.student_id = None
-if "student_name" not in st.session_state:
-    st.session_state.student_name = None
+for key in ["role", "student_id", "student_name", "student_info", "pending_register"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
 
 # ── 헤더 ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="main-header">
-    <h1>📚 패스파인더 과제 관리 시스템</h1>
-    <p>패스파인더 국어학원 · 과제 제출 & 관리</p>
+    <div class="sub">Pathfinder Korean Academy</div>
+    <h1>📚 학생 과제 제출 프로그램</h1>
+    <p>패스파인더 국어학원 · 과제 제출 & 관리 시스템</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ── 로그인 분기 ────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# 로그인 / 첫 등록 화면
+# ══════════════════════════════════════════════════════════════════════════════
 if st.session_state.role is None:
-    col1, col2 = st.columns(2)
 
-    with col1:
-        st.markdown("### 🎒 학생 로그인")
-        with st.form("student_login"):
-            s_name = st.text_input("이름", placeholder="홍길동")
-            s_code = st.text_input("학번(코드)", placeholder="S001")
-            submitted = st.form_submit_button("로그인", use_container_width=True, type="primary")
-            if submitted:
+    # ── 신규 학생 학년/반 등록 단계 ──────────────────────────────────────────
+    if st.session_state.pending_register is not None:
+        info = st.session_state.pending_register
+        st.info(f"✅ **{info['name']}** 학생 확인 완료! 학년과 반을 입력해주세요. (최초 1회)")
+
+        GRADE_OPTIONS = ["중1", "중2", "중3", "고1", "고2", "고3"]
+        CLASS_OPTIONS = ["A반", "B반", "C반", "D반"]
+
+        with st.form("register_form"):
+            col1, col2 = st.columns(2)
+            grade = col1.selectbox("학년", GRADE_OPTIONS)
+            class_name = col2.selectbox("반", CLASS_OPTIONS)
+            ok = st.form_submit_button("등록 완료 ✅", type="primary", use_container_width=True)
+            if ok:
                 conn = get_db()
-                row = conn.execute(
-                    "SELECT * FROM students WHERE name=? AND student_code=?",
-                    (s_name.strip(), s_code.strip().upper())
-                ).fetchone()
-                conn.close()
-                if row:
+                try:
+                    conn.execute(
+                        "INSERT INTO students (name, student_code, grade, class_name) VALUES (?,?,?,?)",
+                        (info["name"], info["code"], grade, class_name)
+                    )
+                    conn.commit()
+                    row = conn.execute("SELECT * FROM students WHERE student_code=?", (info["code"],)).fetchone()
                     st.session_state.role = "student"
                     st.session_state.student_id = row["id"]
                     st.session_state.student_name = row["name"]
                     st.session_state.student_info = dict(row)
+                    st.session_state.pending_register = None
                     st.rerun()
+                except sqlite3.IntegrityError:
+                    st.error("이미 등록된 학번입니다.")
+                finally:
+                    conn.close()
+
+        if st.button("← 뒤로"):
+            st.session_state.pending_register = None
+            st.rerun()
+        st.stop()
+
+    # ── 일반 로그인 화면 ──────────────────────────────────────────────────────
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("### 🎒 학생 로그인")
+        st.caption("학번은 [학번 생성기]에서 이름으로 발급받으세요.")
+        with st.form("student_login"):
+            s_name = st.text_input("이름", placeholder="홍길동")
+            s_code = st.text_input("학번 (6자리 숫자)", placeholder="예) 739281")
+            submitted = st.form_submit_button("로그인", use_container_width=True, type="primary")
+
+            if submitted:
+                name = s_name.strip()
+                code = s_code.strip()
+
+                if not name or not code:
+                    st.error("이름과 학번을 모두 입력해주세요.")
+                elif not verify_code(name, code):
+                    st.error("학번이 올바르지 않습니다. 학번 생성기에서 다시 확인해주세요.")
                 else:
-                    st.error("이름 또는 학번을 확인해 주세요.")
+                    # 코드 일치 → DB에서 학생 조회
+                    conn = get_db()
+                    row = conn.execute(
+                        "SELECT * FROM students WHERE name=? AND student_code=?",
+                        (name, code)
+                    ).fetchone()
+                    conn.close()
+
+                    if row:
+                        # 기존 학생
+                        st.session_state.role = "student"
+                        st.session_state.student_id = row["id"]
+                        st.session_state.student_name = row["name"]
+                        st.session_state.student_info = dict(row)
+                        st.rerun()
+                    else:
+                        # 신규 학생 → 학년/반 등록 단계로
+                        st.session_state.pending_register = {"name": name, "code": code}
+                        st.rerun()
 
     with col2:
         st.markdown("### 👩‍🏫 선생님 로그인")
@@ -216,7 +453,7 @@ if st.session_state.role is None:
                     st.error("비밀번호를 확인해 주세요.")
 
     st.divider()
-    st.caption("💡 학번(코드)은 선생님께 문의하세요. 샘플 계정: 김민준 / S001")
+    st.caption("💡 학번은 학번 생성기(keygen.html)에서 이름을 입력하면 자동 발급됩니다.")
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -237,7 +474,6 @@ if st.session_state.role == "student":
             st.session_state.student_id = None
             st.rerun()
 
-    # ── 과제 목록 ────────────────────────────────────────────────────────────
     if page == "📋 내 과제 목록":
         st.markdown("## 📋 내 과제 목록")
 
@@ -257,7 +493,6 @@ if st.session_state.role == "student":
         else:
             pending = [a for a in assignments if a["sub_id"] is None]
             done    = [a for a in assignments if a["sub_id"] is not None]
-
             st.markdown(f"**미제출** {len(pending)}개 &nbsp;|&nbsp; **제출 완료** {len(done)}개")
 
             for a in assignments:
@@ -269,23 +504,17 @@ if st.session_state.role == "student":
                     except:
                         pass
 
-                with st.expander(f"{'🔴' if is_late else '🟡' if a['sub_id'] is None else '🟢'} {a['title']}  —  마감: {due_str}"):
+                icon = '🔴' if is_late else ('🟡' if a['sub_id'] is None else '🟢')
+                with st.expander(f"{icon} {a['title']}  —  마감: {due_str}"):
                     st.markdown(f"**설명:** {a['description'] or '없음'}")
-                    st.markdown(f"**대상:** {a['grade']} {a['class_name']}")
 
                     if a["sub_id"] is None:
-                        # 제출 폼
                         with st.form(f"submit_{a['id']}"):
                             st.markdown("##### 📤 과제 제출")
-                            uploaded = st.file_uploader(
-                                "사진 업로드 (jpg/png/pdf)",
-                                type=["jpg","jpeg","png","pdf"],
-                                key=f"file_{a['id']}"
-                            )
-                            memo = st.text_area("메모 (선택)", placeholder="추가 설명이 있으면 입력하세요", key=f"memo_{a['id']}")
-                            submit_btn = st.form_submit_button("제출하기 ✅", type="primary", use_container_width=True)
-
-                            if submit_btn:
+                            uploaded = st.file_uploader("사진 업로드 (jpg/png/pdf)",
+                                type=["jpg","jpeg","png","pdf"], key=f"file_{a['id']}")
+                            memo = st.text_area("메모 (선택)", key=f"memo_{a['id']}")
+                            if st.form_submit_button("제출하기 ✅", type="primary", use_container_width=True):
                                 if uploaded is None:
                                     st.error("파일을 첨부해 주세요.")
                                 else:
@@ -304,7 +533,6 @@ if st.session_state.role == "student":
                                     finally:
                                         conn2.close()
                     else:
-                        # 제출 완료 상태
                         status_label = (
                             "<span class='badge-checked'>✔ 선생님 확인 완료</span>" if a["is_checked"]
                             else "<span class='badge-done'>📨 제출 완료 (검토 중)</span>"
@@ -314,7 +542,6 @@ if st.session_state.role == "student":
                         if a["teacher_comment"]:
                             st.info(f"💬 선생님 코멘트: {a['teacher_comment']}")
 
-    # ── 제출 완료 목록 ────────────────────────────────────────────────────────
     else:
         st.markdown("## ✅ 제출 완료 목록")
         conn = get_db()
@@ -337,7 +564,6 @@ if st.session_state.role == "student":
                     st.markdown(f"**메모:** {s['memo']}")
                 if s["teacher_comment"]:
                     st.info(f"💬 선생님 코멘트: {s['teacher_comment']}")
-                # 이미지 미리보기
                 if s["file_path"] and os.path.exists(s["file_path"]):
                     ext = Path(s["file_path"]).suffix.lower()
                     if ext in [".jpg", ".jpeg", ".png"]:
@@ -366,7 +592,6 @@ elif st.session_state.role == "admin":
             st.session_state.role = None
             st.rerun()
 
-    # ── 대시보드 ──────────────────────────────────────────────────────────────
     if page == "📊 대시보드":
         st.markdown("## 📊 대시보드")
 
@@ -392,13 +617,10 @@ elif st.session_state.role == "admin":
             """, unsafe_allow_html=True)
 
         st.divider()
-
-        # 최근 제출
         st.markdown("### 📬 최근 제출 현황")
         conn = get_db()
         recent = conn.execute("""
-            SELECT s.submitted_at, st.name, st.grade, st.class_name,
-                   a.title, s.is_checked
+            SELECT s.submitted_at, st.name, st.grade, st.class_name, a.title, s.is_checked
             FROM submissions s
             JOIN students st ON s.student_id = st.id
             JOIN assignments a ON s.assignment_id = a.id
@@ -415,26 +637,20 @@ elif st.session_state.role == "admin":
         else:
             st.info("아직 제출된 과제가 없습니다.")
 
-    # ── 과제 등록 ──────────────────────────────────────────────────────────────
     elif page == "📝 과제 등록":
         st.markdown("## 📝 새 과제 등록")
 
         with st.form("new_assignment"):
             title = st.text_input("과제 제목 *", placeholder="예) 3강 문제풀이 사진 제출")
-            description = st.text_area("설명 (선택)", placeholder="과제 내용, 주의사항 등")
-            
+            description = st.text_area("설명 (선택)")
             col1, col2 = st.columns(2)
-            grades = get_grades()
-            grade = col1.selectbox("학년 *", grades if grades else ["중1","중2","중3","고1","고2","고3"])
-            
-            # 선택된 학년의 반 목록
+            grades = get_grades() or ["중1","중2","중3","고1","고2","고3"]
+            grade = col1.selectbox("학년 *", grades)
             classes = get_classes(grade) or ["A반","B반"]
             class_name = col2.selectbox("반 *", classes)
-
             due_date = st.date_input("마감일 (선택)", value=None)
 
-            submitted = st.form_submit_button("과제 등록 ✅", type="primary", use_container_width=True)
-            if submitted:
+            if st.form_submit_button("과제 등록 ✅", type="primary", use_container_width=True):
                 if not title.strip():
                     st.error("제목을 입력해 주세요.")
                 else:
@@ -448,41 +664,32 @@ elif st.session_state.role == "admin":
                     conn.close()
                     st.success(f"✅ '{title}' 과제가 {grade} {class_name}에 등록되었습니다!")
 
-    # ── 과제 관리 ──────────────────────────────────────────────────────────────
     elif page == "📋 과제 관리":
         st.markdown("## 📋 등록된 과제 목록")
 
         conn = get_db()
         assignments = conn.execute("""
-            SELECT a.*,
-                   COUNT(s.id) AS sub_count
+            SELECT a.*, COUNT(s.id) AS sub_count
             FROM assignments a
             LEFT JOIN submissions s ON a.id = s.assignment_id
-            GROUP BY a.id
-            ORDER BY a.created_at DESC
+            GROUP BY a.id ORDER BY a.created_at DESC
         """).fetchall()
         conn.close()
 
         if not assignments:
             st.info("등록된 과제가 없습니다.")
-        else:
-            for a in assignments:
-                with st.expander(f"📄 [{a['grade']} {a['class_name']}] {a['title']}  —  제출 {a['sub_count']}건"):
-                    st.markdown(f"**설명:** {a['description'] or '없음'}")
-                    st.markdown(f"**마감일:** {a['due_date'] or '없음'}")
-                    st.markdown(f"**등록일:** {a['created_at'][:10]}")
+        for a in assignments:
+            with st.expander(f"📄 [{a['grade']} {a['class_name']}] {a['title']}  —  제출 {a['sub_count']}건"):
+                st.markdown(f"**설명:** {a['description'] or '없음'}")
+                st.markdown(f"**마감일:** {a['due_date'] or '없음'}")
+                if st.button("🗑 삭제", key=f"del_{a['id']}"):
+                    conn = get_db()
+                    conn.execute("DELETE FROM assignments WHERE id=?", (a["id"],))
+                    conn.execute("DELETE FROM submissions WHERE assignment_id=?", (a["id"],))
+                    conn.commit()
+                    conn.close()
+                    st.rerun()
 
-                    col1, col2 = st.columns([1,3])
-                    if col1.button("🗑 삭제", key=f"del_{a['id']}", type="secondary"):
-                        conn = get_db()
-                        conn.execute("DELETE FROM assignments WHERE id=?", (a["id"],))
-                        conn.execute("DELETE FROM submissions WHERE assignment_id=?", (a["id"],))
-                        conn.commit()
-                        conn.close()
-                        st.success("삭제되었습니다.")
-                        st.rerun()
-
-    # ── 제출 현황 ──────────────────────────────────────────────────────────────
     elif page == "🔍 제출 현황":
         st.markdown("## 🔍 과제별 제출 현황")
 
@@ -500,20 +707,14 @@ elif st.session_state.role == "admin":
 
         conn = get_db()
         sel_a = conn.execute("SELECT * FROM assignments WHERE id=?", (a_id,)).fetchone()
-
-        # 해당 과제 대상 학생 전체 + 제출 여부
         all_students = conn.execute(
             "SELECT * FROM students WHERE grade=? AND class_name=? ORDER BY name",
             (sel_a["grade"], sel_a["class_name"])
         ).fetchall()
-
-        submissions = conn.execute(
-            "SELECT * FROM submissions WHERE assignment_id=?", (a_id,)
-        ).fetchall()
+        submissions = conn.execute("SELECT * FROM submissions WHERE assignment_id=?", (a_id,)).fetchall()
         conn.close()
 
         sub_map = {s["student_id"]: dict(s) for s in submissions}
-
         total = len(all_students)
         done  = len([s for s in all_students if s["id"] in sub_map])
         pct   = int(done/total*100) if total else 0
@@ -522,17 +723,12 @@ elif st.session_state.role == "admin":
         c1.metric("전체 학생", total)
         c2.metric("제출 완료", done)
         c3.metric("제출률", f"{pct}%")
-
         st.progress(pct / 100)
         st.divider()
 
-        # 학생별 목록
         for s in all_students:
             sub = sub_map.get(s["id"])
-            if sub:
-                badge = "🟢 제출완료" + (" ✔확인" if sub["is_checked"] else "")
-            else:
-                badge = "🔴 미제출"
+            badge = ("🟢 제출완료" + (" ✔확인" if sub and sub["is_checked"] else "")) if sub else "🔴 미제출"
 
             with st.expander(f"{s['name']} ({s['student_code']})  —  {badge}"):
                 if sub is None:
@@ -541,19 +737,16 @@ elif st.session_state.role == "admin":
                     st.caption(f"제출 시각: {sub['submitted_at']}")
                     if sub["memo"]:
                         st.markdown(f"**학생 메모:** {sub['memo']}")
-
-                    # 파일 미리보기
                     if sub["file_path"] and os.path.exists(sub["file_path"]):
                         ext = Path(sub["file_path"]).suffix.lower()
                         if ext in [".jpg", ".jpeg", ".png"]:
                             st.image(sub["file_path"], caption="제출 파일", width=400)
                         else:
                             st.download_button("📎 파일 다운로드",
-                                               open(sub["file_path"],"rb").read(),
-                                               file_name=Path(sub["file_path"]).name,
-                                               key=f"dl_{sub['id']}")
+                                open(sub["file_path"],"rb").read(),
+                                file_name=Path(sub["file_path"]).name,
+                                key=f"dl_{sub['id']}")
 
-                    # 확인 처리
                     col1, col2 = st.columns([1,2])
                     if not sub["is_checked"]:
                         if col1.button("✔ 확인 처리", key=f"chk_{sub['id']}", type="primary"):
@@ -564,35 +757,28 @@ elif st.session_state.role == "admin":
                             )
                             conn.commit()
                             conn.close()
-                            st.success("확인 처리되었습니다.")
                             st.rerun()
                     else:
                         col1.success("✔ 확인 완료")
 
-                    # 코멘트
                     with st.form(f"comment_{sub['id']}"):
-                        comment = st.text_input("선생님 코멘트", value=sub["teacher_comment"] or "",
-                                                placeholder="잘했어요! / 다시 풀어오세요.")
+                        comment = st.text_input("선생님 코멘트", value=sub["teacher_comment"] or "")
                         if st.form_submit_button("코멘트 저장"):
                             conn = get_db()
                             conn.execute("UPDATE submissions SET teacher_comment=? WHERE id=?",
                                          (comment, sub["id"]))
                             conn.commit()
                             conn.close()
-                            st.success("저장되었습니다.")
                             st.rerun()
 
-    # ── 학생 관리 ──────────────────────────────────────────────────────────────
     elif page == "👥 학생 관리":
         st.markdown("## 👥 학생 관리")
-
-        tab1, tab2 = st.tabs(["학생 목록", "학생 추가"])
+        tab1, tab2 = st.tabs(["학생 목록", "학번 조회"])
 
         with tab1:
             conn = get_db()
             students = conn.execute("SELECT * FROM students ORDER BY grade, class_name, name").fetchall()
             conn.close()
-
             import pandas as pd
             if students:
                 df = pd.DataFrame([dict(s) for s in students])
@@ -600,32 +786,12 @@ elif st.session_state.role == "admin":
                 df.columns = ["이름","학번","학년","반","등록일"]
                 st.dataframe(df, use_container_width=True, hide_index=True)
             else:
-                st.info("등록된 학생이 없습니다.")
+                st.info("등록된 학생이 없습니다. (첫 로그인 시 자동 등록됩니다)")
 
         with tab2:
-            with st.form("add_student"):
-                st.markdown("#### 새 학생 추가")
-                col1, col2 = st.columns(2)
-                name = col1.text_input("이름 *")
-                code = col2.text_input("학번(코드) *", placeholder="예) S006")
-                col3, col4 = st.columns(2)
-                grade_input = col3.text_input("학년 *", placeholder="중1")
-                class_input = col4.text_input("반 *", placeholder="A반")
-                
-                if st.form_submit_button("학생 추가 ✅", type="primary", use_container_width=True):
-                    if not all([name, code, grade_input, class_input]):
-                        st.error("모든 항목을 입력해 주세요.")
-                    else:
-                        conn = get_db()
-                        try:
-                            conn.execute(
-                                "INSERT INTO students (name, student_code, grade, class_name) VALUES (?,?,?,?)",
-                                (name.strip(), code.strip().upper(), grade_input.strip(), class_input.strip())
-                            )
-                            conn.commit()
-                            st.success(f"✅ {name} 학생이 추가되었습니다.")
-                            st.rerun()
-                        except sqlite3.IntegrityError:
-                            st.error("이미 존재하는 학번입니다.")
-                        finally:
-                            conn.close()
+            st.markdown("#### 이름으로 학번 확인")
+            st.caption("키젠 없이도 여기서 학번 확인 가능합니다.")
+            name_check = st.text_input("이름 입력", placeholder="홍길동")
+            if name_check.strip():
+                code = name_to_code(name_check.strip())
+                st.markdown(f"**{name_check.strip()}** 의 학번: `{code}`")
