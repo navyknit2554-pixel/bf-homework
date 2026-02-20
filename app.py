@@ -5,8 +5,8 @@ from datetime import datetime, date
 from pathlib import Path
 
 st.set_page_config(
-    page_title="패스파인더 과제 관리",
-    page_icon="📚",
+    page_title="BF 국어연구소 과제 관리",
+    page_icon="st.image("images/BFlogo.png", width=200)",
     layout="wide",
     initial_sidebar_state="expanded",
 )
