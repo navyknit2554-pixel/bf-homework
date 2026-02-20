@@ -649,8 +649,12 @@ if st.session_state.role == "student":
                 st.info("학원 공지사항이 없습니다.")
             else:
                 for n in global_notices:
-                    with st.expander(f"📣 {n['title']}  —  {n['created_at'][:10]}"):
-                        st.write(n["content"])
+                    st.markdown(
+                        f"<div style='background:#1e293b;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin-bottom:10px;'>"
+                        f"<div style='font-size:0.75rem;color:#64748b;margin-bottom:4px;'>📣 {n['created_at'][:10]}</div>"
+                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:8px;'>{n['title']}</div>"
+                        f"<div style='color:#cbd5e1;white-space:pre-wrap;'>{n['content']}</div>"
+                        f"</div>", unsafe_allow_html=True)
 
         with ntab2:
             if not subject_notices:
@@ -659,8 +663,12 @@ if st.session_state.role == "student":
                 for n in subject_notices:
                     label = n["teacher_subject"] or ""
                     tname = n["teacher_name_real"] or ""
-                    with st.expander(f"📘 [{label}] {n['title']}  —  {tname} 선생님  {n['created_at'][:10]}"):
-                        st.write(n["content"])
+                    st.markdown(
+                        f"<div style='background:#1e293b;border-left:4px solid #3b82f6;border-radius:6px;padding:14px 16px;margin-bottom:10px;'>"
+                        f"<div style='font-size:0.75rem;color:#64748b;margin-bottom:4px;'>📘 {label} · {tname} 선생님 · {n['created_at'][:10]}</div>"
+                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:8px;'>{n['title']}</div>"
+                        f"<div style='color:#cbd5e1;white-space:pre-wrap;'>{n['content']}</div>"
+                        f"</div>", unsafe_allow_html=True)
 
     elif page == "🗓 시간표":
         st.subheader(f"🗓 시간표  —  {info['grade']} {info['class_name']}")
@@ -828,14 +836,15 @@ elif st.session_state.role == "teacher":
         # 반별 학생 현황
         st.subheader("👥 반별 학생 현황")
         conn = get_db()
-        # 내 과제가 배정된 반의 학생들만 조회
+        # 시간표에 배정된 반 기준으로 조회 (수업 배정 반영)
         assigned = conn.execute("""
-            SELECT DISTINCT grade, class_name FROM assignments WHERE teacher_id=? ORDER BY grade, class_name
-        """, (tid,)).fetchall()
+            SELECT DISTINCT grade, class_name FROM timetable
+            WHERE teacher_name=? ORDER BY grade, class_name
+        """, (tinfo["name"],)).fetchall()
         conn.close()
 
         if not assigned:
-            st.info("아직 등록된 과제가 없습니다.")
+            st.info("시간표에 배정된 반이 없습니다. 관리자에게 시간표 등록을 요청하세요.")
         else:
             for row in assigned:
                 grade, class_name = row["grade"], row["class_name"]
@@ -1377,14 +1386,18 @@ elif st.session_state.role == "teacher":
                 st.info("작성한 공지가 없습니다.")
             else:
                 for n in my_notices:
-                    with st.expander(f"📘 [{n['grade']} {n['class_name']}] {n['title']}  —  {n['created_at'][:10]}"):
-                        st.write(n["content"])
-                        if st.button("🗑 삭제", key=f"del_tn_{n['id']}"):
-                            conn = get_db()
-                            conn.execute("DELETE FROM notices WHERE id=?", (n["id"],))
-                            conn.commit()
-                            conn.close()
-                            st.rerun()
+                    st.markdown(
+                        f"<div style='background:#1e293b;border-left:4px solid #3b82f6;border-radius:6px;padding:14px 16px;margin-bottom:6px;'>"
+                        f"<div style='font-size:0.75rem;color:#64748b;margin-bottom:4px;'>📘 {n['grade']} {n['class_name']} · {n['created_at'][:10]}</div>"
+                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:6px;'>{n['title']}</div>"
+                        f"<div style='color:#cbd5e1;white-space:pre-wrap;'>{n['content']}</div>"
+                        f"</div>", unsafe_allow_html=True)
+                    if st.button("🗑 삭제", key=f"del_tn_{n['id']}"):
+                        conn = get_db()
+                        conn.execute("DELETE FROM notices WHERE id=?", (n["id"],))
+                        conn.commit()
+                        conn.close()
+                        st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 통합 관리자 페이지
@@ -1755,14 +1768,18 @@ elif st.session_state.role == "admin":
                 st.info("등록된 공지가 없습니다.")
             else:
                 for n in all_notices:
-                    with st.expander(f"📣 {n['title']}  —  {n['created_at'][:10]}"):
-                        st.write(n["content"])
-                        if st.button("🗑 삭제", key=f"del_notice_{n['id']}"):
-                            conn = get_db()
-                            conn.execute("DELETE FROM notices WHERE id=?", (n["id"],))
-                            conn.commit()
-                            conn.close()
-                            st.rerun()
+                    st.markdown(
+                        f"<div style='background:#1e293b;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin-bottom:6px;'>"
+                        f"<div style='font-size:0.75rem;color:#64748b;margin-bottom:4px;'>📣 {n['created_at'][:10]}</div>"
+                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:6px;'>{n['title']}</div>"
+                        f"<div style='color:#cbd5e1;white-space:pre-wrap;'>{n['content']}</div>"
+                        f"</div>", unsafe_allow_html=True)
+                    if st.button("🗑 삭제", key=f"del_notice_{n['id']}"):
+                        conn = get_db()
+                        conn.execute("DELETE FROM notices WHERE id=?", (n["id"],))
+                        conn.commit()
+                        conn.close()
+                        st.rerun()
 
     elif page == "👥 학생 관리":
         st.subheader("👥 학생 관리")
