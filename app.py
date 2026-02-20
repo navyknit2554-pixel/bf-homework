@@ -1371,7 +1371,7 @@ elif st.session_state.role == "admin":
 
     elif page == "👥 학생 관리":
         st.subheader("👥 학생 관리")
-        tab1, tab2 = st.tabs(["학생 목록","학번 조회"])
+        tab1, tab2, tab3 = st.tabs(["학생 목록","학번 조회","➕ 학생 등록"])
         with tab1:
             conn = get_db()
             students = conn.execute("SELECT * FROM students ORDER BY grade, class_name, name").fetchall()
@@ -1398,14 +1398,21 @@ elif st.session_state.role == "admin":
                     new_phone = st.text_input("학생 전화번호", value=sel_info["phone"] or "", placeholder="010-0000-0000", key="s_phone")
                 with col2:
                     st.markdown("**👨‍👩‍👧 학부모 정보**")
-                    new_parent_name  = st.text_input("학부모 이름", value=sel_info["parent_name"] or "", placeholder="홍길동 어머니", key="p_name")
-                    new_parent_phone = st.text_input("학부모 전화번호", value=sel_info["parent_phone"] or "", placeholder="010-0000-0000", key="p_phone")
+                    # 기존 저장된 관계 파악 (예: "홍길동(어머니)" → "어머니")
+                    stored = sel_info["parent_name"] or ""
+                    rel_options = ["어머니","아버지","조모","조부","기타"]
+                    detected = next((r for r in rel_options if f"({r})" in stored), rel_options[0])
+                    new_parent_rel   = st.selectbox("가족관계", rel_options,
+                        index=rel_options.index(detected), key="p_rel")
+                    new_parent_phone = st.text_input("학부모 전화번호",
+                        value=sel_info["parent_phone"] or "", placeholder="010-0000-0000", key="p_phone")
 
                 if st.button("저장 ✅", type="primary", use_container_width=True):
+                    parent_label = f"{sel_info['name']}({new_parent_rel})"
                     conn = get_db()
                     conn.execute(
                         "UPDATE students SET phone=?, parent_name=?, parent_phone=? WHERE id=?",
-                        (new_phone.strip(), new_parent_name.strip(), new_parent_phone.strip(), sel_id))
+                        (new_phone.strip(), parent_label, new_parent_phone.strip(), sel_id))
                     conn.commit()
                     conn.close()
                     st.success("연락처가 저장되었습니다! ✅")
@@ -1417,3 +1424,37 @@ elif st.session_state.role == "admin":
             name_check = st.text_input("이름 입력", placeholder="홍길동")
             if name_check.strip():
                 st.success(f"{name_check.strip()} 의 학번: **{name_to_code(name_check.strip())}**")
+
+        with tab3:
+            st.markdown("#### 학생 직접 등록")
+            with st.form("admin_add_student"):
+                col1, col2 = st.columns(2)
+                new_name  = col1.text_input("이름 *", placeholder="홍길동")
+                new_grade = col2.selectbox("학년 *", ["중1","중2","중3","고1","고2","고3"])
+                col3, col4 = st.columns(2)
+                new_class = col3.selectbox("반 *", ["A반","B반","C반","D반"])
+                new_phone = col4.text_input("학생 연락처", placeholder="010-0000-0000")
+                col5, col6 = st.columns(2)
+                new_parent_rel   = col5.selectbox("가족관계", ["어머니","아버지","조모","조부","기타"])
+                new_parent_phone = col6.text_input("학부모 연락처", placeholder="010-0000-0000")
+                if st.form_submit_button("학생 등록 ✅", type="primary", use_container_width=True):
+                    if not new_name.strip():
+                        st.error("이름을 입력해주세요.")
+                    else:
+                        code = name_to_code(new_name.strip())
+                        parent_label = f"{new_name.strip()}({new_parent_rel})"
+                        conn = get_db()
+                        try:
+                            conn.execute(
+                                "INSERT INTO students (name, student_code, grade, class_name, phone, parent_name, parent_phone) VALUES (?,?,?,?,?,?,?)",
+                                (new_name.strip(), code, new_grade, new_class,
+                                 new_phone.strip() or None,
+                                 parent_label,
+                                 new_parent_phone.strip() or None))
+                            conn.commit()
+                            st.success(f"✅ {new_name} 학생 등록 완료!  학번: **{code}**")
+                            st.rerun()
+                        except sqlite3.IntegrityError:
+                            st.error(f"이미 등록된 학생입니다. (학번: {code})")
+                        finally:
+                            conn.close()
