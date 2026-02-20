@@ -98,8 +98,8 @@ for key in ["role", "student_id", "student_name", "student_info", "pending_regis
     if key not in st.session_state:
         st.session_state[key] = None
 
-st.title("📚 패스파인더 학생 과제 제출 프로그램")
-st.caption("Pathfinder Korean Academy")
+
+
 st.divider()
 
 if st.session_state.role is None:
