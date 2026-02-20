@@ -709,36 +709,41 @@ if st.session_state.role == "student":
         """, (info["grade"], info["class_name"])).fetchall()
         conn.close()
 
-        ntab1, ntab2 = st.tabs([f"📣 학원 공지 ({len(global_notices)})", f"📘 과목별 공지 ({len(subject_notices)})"])
+        # 학원 공지 + 과목별 공지를 시간순으로 합쳐서 한 화면에 표시
+        all_notices_merged = []
+        for n in global_notices:
+            all_notices_merged.append(("global", n))
+        for n in subject_notices:
+            all_notices_merged.append(("subject", n))
+        # 최신순 정렬
+        all_notices_merged.sort(key=lambda x: x[1]["created_at"], reverse=True)
 
-        with ntab1:
-            if not global_notices:
-                st.info("학원 공지사항이 없습니다.")
-            else:
-                for n in global_notices:
+        if not all_notices_merged:
+            st.info("공지사항이 없습니다.")
+        else:
+            for ntype, n in all_notices_merged:
+                if ntype == "global":
                     st.markdown(
                         f"<div style='background:#1e293b;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin-bottom:10px;'>"
-                        f"<div style='font-size:0.75rem;color:#64748b;margin-bottom:4px;'>📣 {n['created_at'][:10]}</div>"
-                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:8px;'>{n['title']}</div>"
-                        f"<div style='color:#cbd5e1;white-space:pre-wrap;'>{n['content']}</div>"
+                        f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px;'>"
+                        f"<span style='background:#92400e;color:#fde68a;font-size:0.78rem;font-weight:bold;padding:2px 9px;border-radius:20px;'>📣 학원 공지</span>"
+                        f"<span style='color:#475569;font-size:0.75rem;margin-left:auto;'>{n['created_at'][:10]}</span>"
+                        f"</div>"
+                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:6px;'>{n['title']}</div>"
+                        f"<div style='color:#cbd5e1;white-space:pre-wrap;font-size:0.9rem;'>{n['content']}</div>"
                         f"</div>", unsafe_allow_html=True)
-
-        with ntab2:
-            if not subject_notices:
-                st.info("과목별 공지사항이 없습니다.")
-            else:
-                for n in subject_notices:
+                else:
                     label = n["teacher_subject"] or ""
                     tname = n["teacher_name_real"] or ""
                     st.markdown(
                         f"<div style='background:#1e293b;border-left:4px solid #3b82f6;border-radius:6px;padding:14px 16px;margin-bottom:10px;'>"
-                        f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
-                        f"<span style='background:#1d4ed8;color:#fff;font-size:0.85rem;font-weight:bold;padding:3px 10px;border-radius:20px;'>{label}</span>"
-                        f"<span style='color:#93c5fd;font-size:0.9rem;font-weight:600;'>{tname} 선생님</span>"
+                        f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px;'>"
+                        f"<span style='background:#1d4ed8;color:#fff;font-size:0.78rem;font-weight:bold;padding:2px 9px;border-radius:20px;'>{label}</span>"
+                        f"<span style='color:#93c5fd;font-size:0.88rem;font-weight:600;'>{tname} 선생님</span>"
                         f"<span style='color:#475569;font-size:0.75rem;margin-left:auto;'>{n['created_at'][:10]}</span>"
                         f"</div>"
-                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:8px;'>{n['title']}</div>"
-                        f"<div style='color:#cbd5e1;white-space:pre-wrap;'>{n['content']}</div>"
+                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:6px;'>{n['title']}</div>"
+                        f"<div style='color:#cbd5e1;white-space:pre-wrap;font-size:0.9rem;'>{n['content']}</div>"
                         f"</div>", unsafe_allow_html=True)
 
     elif page == "🗓 시간표":
@@ -981,34 +986,39 @@ elif st.session_state.role == "parent":
         """, (cur_child["grade"], cur_child["class_name"])).fetchall()
         conn.close()
 
-        ntab1, ntab2 = st.tabs([f"📣 학원 공지 ({len(global_notices_p)})", f"📘 과목별 공지 ({len(subject_notices_p)})"])
-        with ntab1:
-            if not global_notices_p:
-                st.info("학원 공지사항이 없습니다.")
-            else:
-                for n in global_notices_p:
+        all_notices_merged_p = []
+        for n in global_notices_p:
+            all_notices_merged_p.append(("global", n))
+        for n in subject_notices_p:
+            all_notices_merged_p.append(("subject", n))
+        all_notices_merged_p.sort(key=lambda x: x[1]["created_at"], reverse=True)
+
+        if not all_notices_merged_p:
+            st.info("공지사항이 없습니다.")
+        else:
+            for ntype, n in all_notices_merged_p:
+                if ntype == "global":
                     st.markdown(
                         f"<div style='background:#1e293b;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;margin-bottom:10px;'>"
-                        f"<div style='font-size:0.75rem;color:#64748b;margin-bottom:4px;'>📣 {n['created_at'][:10]}</div>"
-                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:8px;'>{n['title']}</div>"
-                        f"<div style='color:#cbd5e1;white-space:pre-wrap;'>{n['content']}</div>"
+                        f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px;'>"
+                        f"<span style='background:#92400e;color:#fde68a;font-size:0.78rem;font-weight:bold;padding:2px 9px;border-radius:20px;'>📣 학원 공지</span>"
+                        f"<span style='color:#475569;font-size:0.75rem;margin-left:auto;'>{n['created_at'][:10]}</span>"
+                        f"</div>"
+                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:6px;'>{n['title']}</div>"
+                        f"<div style='color:#cbd5e1;white-space:pre-wrap;font-size:0.9rem;'>{n['content']}</div>"
                         f"</div>", unsafe_allow_html=True)
-        with ntab2:
-            if not subject_notices_p:
-                st.info("과목별 공지사항이 없습니다.")
-            else:
-                for n in subject_notices_p:
+                else:
                     label = n["teacher_subject"] or ""
                     tname = n["teacher_name_real"] or ""
                     st.markdown(
                         f"<div style='background:#1e293b;border-left:4px solid #3b82f6;border-radius:6px;padding:14px 16px;margin-bottom:10px;'>"
-                        f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
-                        f"<span style='background:#1d4ed8;color:#fff;font-size:0.85rem;font-weight:bold;padding:3px 10px;border-radius:20px;'>{label}</span>"
-                        f"<span style='color:#93c5fd;font-size:0.9rem;font-weight:600;'>{tname} 선생님</span>"
+                        f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:6px;'>"
+                        f"<span style='background:#1d4ed8;color:#fff;font-size:0.78rem;font-weight:bold;padding:2px 9px;border-radius:20px;'>{label}</span>"
+                        f"<span style='color:#93c5fd;font-size:0.88rem;font-weight:600;'>{tname} 선생님</span>"
                         f"<span style='color:#475569;font-size:0.75rem;margin-left:auto;'>{n['created_at'][:10]}</span>"
                         f"</div>"
-                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:8px;'>{n['title']}</div>"
-                        f"<div style='color:#cbd5e1;white-space:pre-wrap;'>{n['content']}</div>"
+                        f"<div style='font-weight:bold;font-size:1rem;margin-bottom:6px;'>{n['title']}</div>"
+                        f"<div style='color:#cbd5e1;white-space:pre-wrap;font-size:0.9rem;'>{n['content']}</div>"
                         f"</div>", unsafe_allow_html=True)
 
     # ── 과제 현황 ──────────────────────────────────────────────────
