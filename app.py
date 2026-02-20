@@ -91,7 +91,7 @@ def render_timetable_html(tt_dict, pt_map, days, periods, highlight_fn=None):
         pt = pt_map.get(p)
         time_str = ""
         if pt and pt["start_time"]:
-            time_str = f"{pt['start_time']}~{pt['end_time']}" if pt.get("end_time") else pt["start_time"]
+            time_str = f"{pt['start_time']}~{pt['end_time']}" if pt["end_time"] else pt["start_time"]
         time_html = f'<span class="tt-time">{time_str}</span>' if time_str else ""
         html += f'<tr><td><div class="tt-period"><b>{p}교시</b>{time_html}</div></td>'
 
@@ -1884,31 +1884,54 @@ elif st.session_state.role == "admin":
         st.subheader("🏫 클래스 관리")
         conn = get_db()
         all_students_c = conn.execute("SELECT * FROM students ORDER BY grade, class_name, name").fetchall()
+        all_teachers_c = conn.execute("SELECT * FROM teachers ORDER BY name").fetchall()
         conn.close()
 
-        ctab1, ctab2 = st.tabs(["📋 반별 현황", "🔄 반 편성 변경"])
+        ctab1, ctab2 = st.tabs(["📋 선생님별 반 현황", "🔄 반 편성 변경"])
 
-        # ── 반별 현황 ──────────────────────────────────────────────
+        # ── 선생님별 반 현황 ────────────────────────────────────────
         with ctab1:
-            # 반별로 그룹핑
-            class_map = {}
-            for s in all_students_c:
-                key = f"{s['grade']} {s['class_name']}" if s['class_name'] else f"{s['grade']} (미배정)"
-                class_map.setdefault(key, []).append(s)
-
-            if not class_map:
-                st.info("등록된 학생이 없습니다.")
+            if not all_teachers_c:
+                st.info("등록된 선생님이 없습니다.")
             else:
-                total = sum(len(v) for v in class_map.values())
-                st.caption(f"전체 {len(class_map)}개 반  ·  총 {total}명")
+                t_opts = {f"{t['name']} ({t['subject']})": t for t in all_teachers_c}
+                sel_t_name = st.selectbox("👩‍🏫 선생님 선택", list(t_opts.keys()), key="class_mgmt_teacher")
+                sel_t = t_opts[sel_t_name]
                 st.divider()
-                for cls_key in sorted(class_map.keys()):
-                    sts = class_map[cls_key]
-                    with st.expander(f"📋 {cls_key}  —  {len(sts)}명", expanded=False):
-                        cols = st.columns(5)
-                        for i, s in enumerate(sts):
-                            cur_g = calc_current_grade(s["base_grade"] or s["grade"], s["enrollment_year"]) if s["enrollment_year"] else s["grade"]
-                            cols[i % 5].markdown(f"• {s['name']}  `{cur_g}`")
+
+                # 이 선생님의 시간표에서 담당 반 조회
+                conn = get_db()
+                t_classes = conn.execute("""
+                    SELECT DISTINCT grade, class_name FROM timetable
+                    WHERE teacher_name=? ORDER BY grade, class_name
+                """, (sel_t["name"],)).fetchall()
+                conn.close()
+
+                if not t_classes:
+                    st.info(f"{sel_t['name']} 선생님에게 배정된 반이 없습니다.")
+                else:
+                    total_t = 0
+                    class_rows = []
+                    for tc in t_classes:
+                        conn = get_db()
+                        sts = conn.execute(
+                            "SELECT * FROM students WHERE grade=? AND class_name=? ORDER BY name",
+                            (tc["grade"], tc["class_name"])).fetchall()
+                        conn.close()
+                        total_t += len(sts)
+                        class_rows.append((tc["grade"], tc["class_name"], sts))
+
+                    st.caption(f"담당 {len(class_rows)}개 반  ·  총 {total_t}명")
+
+                    for grade, class_name, sts in class_rows:
+                        with st.expander(f"📋 {grade} {class_name}  —  {len(sts)}명", expanded=True):
+                            if not sts:
+                                st.caption("등록된 학생이 없습니다.")
+                            else:
+                                cols = st.columns(4)
+                                for i, s in enumerate(sts):
+                                    cur_g = calc_current_grade(s["base_grade"] or s["grade"], s["enrollment_year"]) if s["enrollment_year"] else s["grade"]
+                                    cols[i % 4].markdown(f"• {s['name']}  `{cur_g}`")
 
         # ── 반 편성 변경 ───────────────────────────────────────────
         with ctab2:
@@ -1919,7 +1942,6 @@ elif st.session_state.role == "admin":
 
             with btab1:
                 st.markdown("**현재 반 → 새 반으로 전체 이동**")
-                # 현재 존재하는 반 목록
                 existing_classes = sorted(set(
                     f"{s['grade']} {s['class_name']}" for s in all_students_c if s['class_name']
                 ))
@@ -1928,7 +1950,7 @@ elif st.session_state.role == "admin":
                 else:
                     with st.form("bulk_class_move"):
                         bc1, bc2 = st.columns(2)
-                        from_class = bc1.selectbox("이동할 반 (현재)", existing_classes)
+                        from_class   = bc1.selectbox("이동할 반 (현재)", existing_classes)
                         new_grade_b  = bc2.selectbox("새 학년", GRADE_LIST)
                         bc3, bc4 = st.columns(2)
                         new_class_b  = bc3.selectbox("새 반", ["A반","B반","C반","D반","없음"])
@@ -1946,13 +1968,12 @@ elif st.session_state.role == "admin":
                             conn.execute(
                                 "UPDATE students SET grade=?, class_name=?, base_grade=?, enrollment_year=? WHERE grade=? AND class_name=?",
                                 (new_cur_g, new_cn, new_grade_b, int(new_enroll_b), from_g, from_cn))
-                            conn.commit()
-                            conn.close()
+                            conn.commit(); conn.close()
                             st.success(f"✅ {from_class} → {new_grade_b} {new_cn}  {affected}명 이동 완료!")
                             st.rerun()
 
             with btab2:
-                st.markdown("**특정 반 학년 일괄 업데이트**")
+                st.markdown("**전체 학생 학년 자동 업데이트**")
                 st.caption("등록 연도 기준으로 자동 계산된 학년을 DB에 반영합니다.")
                 if st.button("🔄 전체 학생 학년 자동 업데이트", type="primary", use_container_width=True):
                     conn = get_db()
@@ -1963,8 +1984,7 @@ elif st.session_state.role == "admin":
                             if new_g != s["grade"]:
                                 conn.execute("UPDATE students SET grade=? WHERE id=?", (new_g, s["id"]))
                                 updated += 1
-                    conn.commit()
-                    conn.close()
+                    conn.commit(); conn.close()
                     st.success(f"✅ {updated}명의 학년이 업데이트되었습니다!")
                     st.rerun()
 
