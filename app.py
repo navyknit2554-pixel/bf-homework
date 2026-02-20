@@ -246,6 +246,7 @@ if st.session_state.role is None:
         with st.form("teacher_login"):
             t_user = st.text_input("아이디", placeholder="teacher01")
             t_pw   = st.text_input("비밀번호", type="password")
+            st.write("")  # 높이 맞춤
             if st.form_submit_button("로그인", use_container_width=True, type="primary"):
                 conn = get_db()
                 row = conn.execute("SELECT * FROM teachers WHERE username=? AND password_hash=?",
@@ -263,6 +264,8 @@ if st.session_state.role is None:
         st.subheader("🔑 통합 관리자")
         with st.form("admin_login"):
             pw = st.text_input("관리자 비밀번호", type="password")
+            st.write("")  # 높이 맞춤
+            st.write("")  # 높이 맞춤
             if st.form_submit_button("로그인", use_container_width=True):
                 if pw == SUPER_ADMIN_PASSWORD:
                     st.session_state.role = "admin"
