@@ -1423,58 +1423,49 @@ elif st.session_state.role == "admin":
                 h_cols[i+1].markdown(f"**{d}요일**")
             st.divider()
 
-            inputs, teacher_inputs = {}, {}
-            for p in PERIODS:
-                r_cols = st.columns([1]+[3]*len(DAYS))
-                r_cols[0].markdown(f"**{p}교시**")
-                for i, d in enumerate(DAYS):
-                    ec = tt_map.get((d, p), {})
-                    cur_subj    = ec.get("subject") or ""
-                    cur_teacher = ec.get("teacher_name") or ""
-                    cur_combo   = f"{cur_subj} - {cur_teacher}" if cur_subj and cur_teacher else None
-                    widget_key  = f"tt_{sel_grade}_{sel_class}_{d}_{p}"
-
-                    # session_state에 값이 없을 때만 DB 저장값으로 초기화
-                    # → 사용자가 선택한 값이 rerun 때 덮어써지지 않음
-                    if widget_key not in st.session_state:
-                        if cur_combo and cur_combo in subject_options:
-                            st.session_state[widget_key] = cur_combo
-                        else:
-                            st.session_state[widget_key] = EMPTY
-
-                    sel = r_cols[i+1].selectbox(
-                        "", subject_options,
-                        key=widget_key,
-                        label_visibility="collapsed"
-                    )
-                    if sel == EMPTY:
-                        inputs[(d, p)] = ""
-                        teacher_inputs[(d, p)] = ""
-                    else:
-                        parts = sel.split(" - ", 1)
-                        inputs[(d, p)] = parts[0].strip()
-                        teacher_inputs[(d, p)] = parts[1].strip() if len(parts) > 1 else ""
-
-            if st.button("💾 주간 시간표 저장", type="primary", use_container_width=True, key="save_tt"):
-                conn = get_db()
-                for (d, p), subj in inputs.items():
-                    t_name = teacher_inputs.get((d, p), "")
-                    conn.execute("""
-                        INSERT INTO timetable (grade, class_name, day, period, subject, teacher_name)
-                        VALUES (?,?,?,?,?,?)
-                        ON CONFLICT(grade, class_name, day, period)
-                        DO UPDATE SET subject=excluded.subject, teacher_name=excluded.teacher_name
-                    """, (sel_grade, sel_class, d, p, subj or None, t_name or None))
-                conn.commit()
-                conn.close()
-                # 저장 후 session_state 초기화 → DB 최신값으로 다시 로드
+            with st.form(f"tt_form_{sel_grade}_{sel_class}"):
+                inputs, teacher_inputs = {}, {}
                 for p in PERIODS:
-                    for d in DAYS:
-                        k = f"tt_{sel_grade}_{sel_class}_{d}_{p}"
-                        if k in st.session_state:
-                            del st.session_state[k]
-                st.success(f"✅ {sel_grade} {sel_class} 주간 시간표가 저장되었습니다!")
-                st.rerun()
+                    r_cols = st.columns([1]+[3]*len(DAYS))
+                    r_cols[0].markdown(f"**{p}교시**")
+                    for i, d in enumerate(DAYS):
+                        ec = tt_map.get((d, p), {})
+                        cur_subj    = ec.get("subject") or ""
+                        cur_teacher = ec.get("teacher_name") or ""
+                        cur_combo   = f"{cur_subj} - {cur_teacher}" if cur_subj and cur_teacher else None
+                        if cur_combo and cur_combo in subject_options:
+                            default_idx = subject_options.index(cur_combo)
+                        else:
+                            default_idx = 0
+
+                        sel = r_cols[i+1].selectbox(
+                            "", subject_options,
+                            index=default_idx,
+                            key=f"tt_{sel_grade}_{sel_class}_{d}_{p}",
+                            label_visibility="collapsed"
+                        )
+                        if sel == EMPTY:
+                            inputs[(d, p)] = ""
+                            teacher_inputs[(d, p)] = ""
+                        else:
+                            parts = sel.split(" - ", 1)
+                            inputs[(d, p)] = parts[0].strip()
+                            teacher_inputs[(d, p)] = parts[1].strip() if len(parts) > 1 else ""
+
+                if st.form_submit_button("💾 주간 시간표 저장", type="primary", use_container_width=True):
+                    conn = get_db()
+                    for (d, p), subj in inputs.items():
+                        t_name = teacher_inputs.get((d, p), "")
+                        conn.execute("""
+                            INSERT INTO timetable (grade, class_name, day, period, subject, teacher_name)
+                            VALUES (?,?,?,?,?,?)
+                            ON CONFLICT(grade, class_name, day, period)
+                            DO UPDATE SET subject=excluded.subject, teacher_name=excluded.teacher_name
+                        """, (sel_grade, sel_class, d, p, subj or None, t_name or None))
+                    conn.commit()
+                    conn.close()
+                    st.success(f"✅ {sel_grade} {sel_class} 주간 시간표가 저장되었습니다!")
+                    st.rerun()
 
             # 미리보기
             conn = get_db()
