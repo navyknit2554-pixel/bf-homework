@@ -9,8 +9,8 @@ import re
 import requests
 
 st.set_page_config(
-    page_title="패스파인더 과제 관리",
-    page_icon="📚",
+    page_title="모두의 학습 관리",
+    page_icon="✏️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -166,7 +166,7 @@ def send_aligo_sms(receivers: list, message: str, sender: str = None) -> dict:
             "receiver": ",".join(cleaned),
             "msg":      message,
             "msg_type": "SMS" if len(message) <= 90 else "LMS",
-            "title":    "패스파인더 국어학원" if len(message) > 90 else "",
+            "title":    "모두의 학습 관리" if len(message) > 90 else "",
         }, timeout=10)
         return resp.json()
     except Exception as e:
@@ -1467,7 +1467,7 @@ elif st.session_state.role == "teacher":
             st.divider()
             with st.expander(f"📱 미제출 학생 알림 ({len(missing)}명)"):
                 due_str = sel_a["due_date"] or "미정"
-                default_tmpl = f"[패스파인더 국어학원] {{name}} 학생, 📚 {sel_a['title']} 과제(마감: {due_str})가 아직 제출되지 않았습니다. 빠른 제출 부탁드립니다!"
+                default_tmpl = f"[모두의 학습 관리] {{name}} 학생, 📚 {sel_a['title']} 과제(마감: {due_str})가 아직 제출되지 않았습니다. 빠른 제출 부탁드립니다!"
                 tmpl = st.text_area("메시지 템플릿 ({name} 은 학생 이름으로 자동 치환)", value=default_tmpl, height=100)
                 st.divider()
 
@@ -2420,7 +2420,7 @@ elif st.session_state.role == "admin":
             with st.form("admin_add_student"):
                 col1, col2 = st.columns(2)
                 new_name   = col1.text_input("이름 *", placeholder="홍길동")
-                new_school = col2.text_input("학교", placeholder="패스파인더중학교")
+                new_school = col2.text_input("학교", placeholder="◇◇중/고")
                 col3, col4 = st.columns(2)
                 new_grade  = col3.selectbox("학년 *", GRADE_LIST)
                 new_class  = col4.selectbox("반 *", ["A반","B반","C반","D반","없음"])
