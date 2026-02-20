@@ -5,7 +5,7 @@ from datetime import datetime, date
 from pathlib import Path
 
 st.set_page_config(
-    page_title="BF 국어연구소 과제 관리",
+    page_title="패스파인더 국어 과제 관리",
     page_icon="🟦",
     layout="wide",
     initial_sidebar_state="expanded",
