@@ -1,4 +1,4 @@
-# 📚 패스파인더 과제 관리 시스템
+# ✏️ 모두의 학습 관리 시스템 
 
 ## 실행 방법
 
@@ -27,7 +27,7 @@ streamlit run app.py
 
 ### 관리자 비밀번호
 ```
-pathfinder2024
+modoohakgwan1234
 ```
 app.py 상단 `ADMIN_PASSWORD` 변수에서 변경 가능
 
