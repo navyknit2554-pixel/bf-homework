@@ -113,8 +113,8 @@ def render_timetable_html(tt_dict, pt_map, days, periods, highlight_fn=None):
                 # 단일 셀 (학생/학부모 시간표)
                 is_hl = highlight_fn(val) if highlight_fn else False
                 s = hl_style if is_hl else cell_style
-                sub  = val.get("subject") or "—"
-                tchr = val.get("teacher_name") or ""
+                sub  = val["subject"] if val["subject"] else "—"
+                tchr = val["teacher_name"] if val["teacher_name"] else ""
                 html += f'<td><div style="{s}"><span class="tt-sub">{sub}</span><span class="tt-teacher">{tchr}</span></div></td>'
         html += "</tr>"
 
@@ -378,19 +378,25 @@ st.markdown("""
 div[data-testid="stRadio"] > div { display: flex; flex-direction: column; gap: 6px; }
 div[data-testid="stRadio"] label { padding: 6px 10px !important; border-radius: 6px; }
 </style>
-<script>
-// 사이드바 메뉴 클릭 시 모바일에서 자동 닫기
-document.addEventListener('click', function(e) {
-    var label = e.target.closest('div[data-testid="stRadio"] label');
-    if (label) {
-        setTimeout(function() {
-            var closeBtn = document.querySelector('[data-testid="stSidebarCollapseButton"]');
-            if (closeBtn && window.innerWidth < 768) closeBtn.click();
-        }, 150);
-    }
-});
-</script>
 """, unsafe_allow_html=True)
+
+import streamlit.components.v1 as _components
+_components.html("""
+<script>
+(function() {
+    function closeSidebar() {
+        try {
+            var btn = window.parent.document.querySelector('[data-testid="stSidebarCollapseButton"]');
+            if (btn && window.parent.innerWidth < 768) btn.click();
+        } catch(e) {}
+    }
+    window.parent.document.addEventListener('click', function(e) {
+        var label = e.target.closest('div[data-testid="stRadio"] label');
+        if (label) setTimeout(closeSidebar, 200);
+    }, true);
+})();
+</script>
+""", height=0)
 st.divider()
 
 # ══════════════════════════════════════════════════════════════════════════════
