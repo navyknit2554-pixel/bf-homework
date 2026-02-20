@@ -1537,16 +1537,18 @@ elif st.session_state.role == "admin":
                     st.warning(f"⚠️ {sel_teacher['name']} 선생님에게 배정된 학생이 없습니다. 학생 관리 → 수업 배정에서 먼저 배정해주세요.")
                     st.stop()
 
-                CLASS_OPTIONS = ["— 없음 —"] + [f"{r['grade']} {r['class_name']}" for r in assigned_classes]
-                st.caption(f"📌 배정된 반: {', '.join([f"{r['grade']} {r['class_name']}" for r in assigned_classes])}")
-                # 현재 저장된 데이터: {(day, period): "고1 A반"}
+                CLASS_OPTIONS = [f"{r['grade']} {r['class_name']}" for r in assigned_classes]
+                st.caption(f"📌 배정된 반: {', '.join(CLASS_OPTIONS)}")
+
+                # 현재 저장된 데이터: {(day, period): ["고1 A반", "고1 B반", ...]}  ← 여러 반 가능
                 cur_map = {}
                 for r in existing_tt:
-                    cur_map[(r["day"], r["period"])] = f"{r['grade']} {r['class_name']}"
+                    key = (r["day"], r["period"])
+                    cur_map.setdefault(key, []).append(f"{r['grade']} {r['class_name']}")
 
                 st.divider()
 
-                # 폼으로 감싸서 중간 rerun 방지
+                # st.form 안에서 multiselect 사용 → 저장 버튼 눌러야 rerun
                 with st.form(f"tt_teacher_form_{sel_teacher['id']}"):
                     h_cols = st.columns([1]+[2]*len(DAYS))
                     h_cols[0].markdown("**교시**")
@@ -1562,23 +1564,23 @@ elif st.session_state.role == "admin":
                             f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'><b>{p}교시</b></div>",
                             unsafe_allow_html=True)
                         for i, d in enumerate(DAYS):
-                            cur_val = cur_map.get((d, p), "— 없음 —")
-                            default_idx = CLASS_OPTIONS.index(cur_val) if cur_val in CLASS_OPTIONS else 0
-                            sel = r_cols[i+1].selectbox(
+                            cur_vals = cur_map.get((d, p), [])
+                            # 저장된 값 중 현재 CLASS_OPTIONS에 있는 것만 기본 선택
+                            valid_defaults = [v for v in cur_vals if v in CLASS_OPTIONS]
+                            sel = r_cols[i+1].multiselect(
                                 "", CLASS_OPTIONS,
-                                index=default_idx,
+                                default=valid_defaults,
                                 key=f"tt_t_{sel_teacher['id']}_{d}_{p}",
                                 label_visibility="collapsed"
                             )
-                            cell_selections[(d, p)] = sel
+                            cell_selections[(d, p)] = sel  # 리스트
                         st.markdown("<hr style='margin:2px 0;border:none;border-top:1px solid #1e293b;'>", unsafe_allow_html=True)
 
                     if st.form_submit_button("💾 시간표 저장", type="primary", use_container_width=True):
                         conn = get_db()
-                        # 이 선생님의 기존 시간표 전체 삭제 후 재저장
                         conn.execute("DELETE FROM timetable WHERE teacher_name=?", (sel_teacher["name"],))
-                        for (d, p), cls_val in cell_selections.items():
-                            if cls_val != "— 없음 —":
+                        for (d, p), cls_list in cell_selections.items():
+                            for cls_val in cls_list:
                                 g, cn = cls_val.split(" ", 1)
                                 conn.execute("""
                                     INSERT INTO timetable (grade, class_name, day, period, subject, teacher_name)
@@ -1995,14 +1997,15 @@ elif st.session_state.role == "admin":
                         st.markdown("**담당 선생님:** " + "  ·  ".join([f"{r['subject']} {r['name']}" for r in cur_teachers]))
                     st.divider()
 
-                    # 학년/반/학교
+                    # 학년/반/학교 — 학생 ID를 key에 포함해 학생 변경 시 자동 반영
                     col1, col2, col3 = st.columns(3)
+                    sid_key = sel_s["id"]
                     cur_grade_idx = GRADE_LIST.index(sel_s["grade"]) if sel_s["grade"] in GRADE_LIST else 6
-                    new_grade_a  = col1.selectbox("학년", GRADE_LIST, index=cur_grade_idx, key="assign_grade")
+                    new_grade_a  = col1.selectbox("학년", GRADE_LIST, index=cur_grade_idx, key=f"assign_grade_{sid_key}")
                     class_list   = ["A반","B반","C반","D반","없음"]
                     cur_class    = sel_s["class_name"] if sel_s["class_name"] in class_list else "없음"
-                    new_class_a  = col2.selectbox("반", class_list, index=class_list.index(cur_class), key="assign_class")
-                    new_school_a = col3.text_input("학교", value=sel_s["school"] or "", key="assign_school")
+                    new_class_a  = col2.selectbox("반", class_list, index=class_list.index(cur_class), key=f"assign_class_{sid_key}")
+                    new_school_a = col3.text_input("학교", value=sel_s["school"] or "", key=f"assign_school_{sid_key}")
 
                     st.divider()
                     st.markdown("**👩‍🏫 담당 선생님 배정**")
