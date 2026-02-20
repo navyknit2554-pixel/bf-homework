@@ -294,7 +294,7 @@ if st.session_state.role == "student":
         conn = get_db()
         assignments = conn.execute("""
             SELECT a.*, t.name AS teacher_name, t.subject,
-                   s.id AS sub_id, s.submitted_at, s.is_checked, s.teacher_comment
+                   s.id AS sub_id, s.submitted_at, s.is_checked, s.checked_at, s.teacher_comment
             FROM assignments a
             LEFT JOIN teachers t ON a.teacher_id = t.id
             LEFT JOIN submissions s ON a.id = s.assignment_id AND s.student_id = ?
@@ -358,6 +358,8 @@ if st.session_state.role == "student":
                                 else:
                                     st.info("📨 제출 완료 (검토 중)")
                                 st.caption(f"제출 시각: {a['submitted_at']}")
+                                if a["is_checked"] and a["checked_at"]:
+                                    st.caption(f"확인 시각: {a['checked_at']}")
                                 if a["teacher_comment"]:
                                     st.info(f"💬 선생님 코멘트: {a['teacher_comment']}")
 
@@ -410,9 +412,9 @@ if st.session_state.role == "student":
                     subject = ""
                     st.info("등록된 선생님이 없습니다.")
                 q_title   = st.text_input("제목 *", placeholder="예) 3강 2번 문제 질문")
-                q_content = st.text_area("질문 내용 *", placeholder="궁금한 내용을 자세히 적어주세요.", height=150)
                 q_images  = st.file_uploader("📸 이미지 첨부 (선택, 여러 장 가능)",
                     type=["jpg","jpeg","png"], accept_multiple_files=True)
+                q_content = st.text_area("질문 내용 *", placeholder="궁금한 내용을 자세히 적어주세요.", height=150)
                 if st.form_submit_button("질문 등록 ✅", type="primary", use_container_width=True):
                     if not q_title.strip() or not q_content.strip():
                         st.error("제목과 내용을 모두 입력해주세요.")
@@ -656,6 +658,8 @@ elif st.session_state.role == "teacher":
                             st.rerun()
                     else:
                         col1.success("✔ 확인 완료")
+                        if sub["checked_at"]:
+                            st.caption(f"확인 시각: {sub['checked_at']}")
                     with st.form(f"comment_{sub['id']}"):
                         comment = st.text_input("선생님 코멘트", value=sub["teacher_comment"] or "")
                         if st.form_submit_button("코멘트 저장 ✅", use_container_width=True):
