@@ -217,8 +217,7 @@ if st.session_state.role is None:
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.subheader("🎒 학생 로그인")
-        st.caption("학번은 학번 생성기에서 발급받으세요.")
+        st.markdown("### 🎒 학생 로그인  <span style='font-size:0.75rem; color:#64748b; font-weight:400'>학번은 학번 생성기에서 발급받으세요.</span>", unsafe_allow_html=True)
         with st.form("student_login"):
             s_name = st.text_input("이름", placeholder="홍길동")
             s_code = st.text_input("학번 (6자리)", placeholder="739281")
