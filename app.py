@@ -2437,14 +2437,7 @@ elif st.session_state.role == "admin":
                 df.columns = ["이름","학번","학년(현재)","반","학교","학생연락처","학부모","학부모연락처","등록일"]
                 st.dataframe(df, use_container_width=True, hide_index=True)
 
-                st.divider()
-                st.markdown("#### ✏️ 학생 선택해서 수정")
-                sel_opts = {f"{s['name']}  ({s['grade']} {s['class_name']})  학번: {s['student_code']}": s["id"] for s in students}
-                sel_label = st.selectbox("학생 선택", ["— 선택하세요 —"] + list(sel_opts.keys()), key="list_stu_sel")
-                if sel_label != "— 선택하세요 —":
-                    if st.button("수정 페이지로 이동 →", type="primary", use_container_width=True):
-                        st.session_state.admin_selected_student = sel_opts[sel_label]
-                        st.rerun()
+
 
         # ── 학생 등록 ──────────────────────────────────────────────
         with tab2:
