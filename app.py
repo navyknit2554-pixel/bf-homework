@@ -1593,7 +1593,7 @@ elif st.session_state.role == "admin":
                         st.success(f"✅ {sel_teacher['name']} 선생님 시간표가 저장되었습니다!")
                         st.rerun()
 
-                # 현재 저장된 시간표 미리보기
+                # 현재 저장된 시간표 미리보기 (중복 배치 지원)
                 conn = get_db()
                 preview = conn.execute(
                     "SELECT * FROM timetable WHERE teacher_name=? AND subject IS NOT NULL ORDER BY period",
@@ -1602,7 +1602,10 @@ elif st.session_state.role == "admin":
                 if preview:
                     st.divider()
                     st.markdown("#### 👁 저장된 시간표")
-                    tt = {(r["day"], r["period"]): r for r in preview}
+                    # 한 칸에 여러 반 리스트로 저장
+                    tt_multi = {}
+                    for r in preview:
+                        tt_multi.setdefault((r["day"], r["period"]), []).append(r)
                     max_p = max(r["period"] for r in preview)
                     hc = st.columns([1]+[2]*len(DAYS))
                     hc[0].markdown("**교시**")
@@ -1615,13 +1618,17 @@ elif st.session_state.role == "admin":
                             f"<div style='background:{row_bg};border-left:3px solid #3b82f6;padding:8px;border-radius:4px;'><b>{p}교시</b></div>",
                             unsafe_allow_html=True)
                         for i, d in enumerate(DAYS):
-                            cell = tt.get((d, p))
-                            if cell:
-                                rc[i+1].markdown(
-                                    f"<div style='background:#1e3a5f;border-radius:5px;padding:6px 8px;text-align:center;font-size:0.8rem;margin:2px;'>"
-                                    f"<b>{cell['grade']} {cell['class_name']}</b>"
-                                    f"<div style='color:#94a3b8;font-size:0.7rem;'>{cell['subject']}</div>"
-                                    f"</div>", unsafe_allow_html=True)
+                            cells = tt_multi.get((d, p), [])
+                            if cells:
+                                inner = "".join([
+                                    f"<div style='background:#1e3a5f;border-radius:5px;padding:5px 8px;"
+                                    f"text-align:center;font-size:0.8rem;margin-bottom:3px;'>"
+                                    f"<b>{c['grade']} {c['class_name']}</b>"
+                                    f"<div style='color:#94a3b8;font-size:0.7rem;'>{c['subject']}</div>"
+                                    f"</div>"
+                                    for c in cells
+                                ])
+                                rc[i+1].markdown(inner, unsafe_allow_html=True)
                             else:
                                 rc[i+1].markdown(
                                     f"<div style='background:{row_bg};border-radius:5px;padding:6px 8px;text-align:center;color:#334155;font-size:0.8rem;margin:2px;'>—</div>",
