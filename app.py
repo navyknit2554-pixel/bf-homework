@@ -653,16 +653,25 @@ elif st.session_state.role == "teacher":
 
                     if phone:
                         import urllib.parse
-                        encoded = urllib.parse.quote(msg_text)
-                        # 카카오톡 앱 링크 (모바일) / 웹 링크 (PC)
-                        kakao_link = f"https://open.kakao.com/o/sRuleEdd"  # 플레이스홀더
-                        sms_link   = f"sms:{phone}?body={encoded}"
                         col2.markdown(f"📞 `{s['phone']}`")
-                        col3.markdown(
-                            f'<a href="{sms_link}" target="_blank">'
-                            f'<button style="background:#FEE500;color:#3C1E1E;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:bold;">💬 카카오톡 전송</button></a>',
-                            unsafe_allow_html=True
-                        )
+                        # 클립보드 복사 + 카카오톡 열기 (각각 + 통합 버튼)
+                        btn_html = f"""
+<div style="display:flex;gap:8px;flex-wrap:wrap;">
+  <button onclick="navigator.clipboard.writeText({repr(msg_text)}).then(()=>{{this.innerText='✅ 복사됨';setTimeout(()=>this.innerText='📋 메시지 복사',2000)}})"
+    style="background:#4f86f7;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.85rem;">
+    📋 메시지 복사
+  </button>
+  <a href="kakaotalk://" target="_blank">
+    <button style="background:#FEE500;color:#3C1E1E;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.85rem;">
+      💬 카카오톡 열기
+    </button>
+  </a>
+  <button onclick="navigator.clipboard.writeText({repr(msg_text)}).then(()=>{{ window.open('kakaotalk://','_blank'); this.innerText='✅ 완료!';setTimeout(()=>this.innerText='⚡ 복사+카카오톡',2000) }})"
+    style="background:#3C1E1E;color:#FEE500;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.85rem;">
+    ⚡ 복사+카카오톡
+  </button>
+</div>"""
+                        col3.markdown(btn_html, unsafe_allow_html=True)
                     else:
                         col2.caption("연락처 미등록")
                         col3.caption("👉 관리자 페이지에서 연락처 등록 필요")
