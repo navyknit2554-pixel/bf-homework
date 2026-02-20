@@ -260,10 +260,6 @@ if st.session_state.role == "student":
 
     if page == "📋 내 과제 목록":
         st.subheader("📋 내 과제 목록")
-
-        if "assign_subject" not in st.session_state:
-            st.session_state.assign_subject = None
-
         conn = get_db()
         assignments = conn.execute("""
             SELECT a.*, t.name AS teacher_name, t.subject,
@@ -279,89 +275,63 @@ if st.session_state.role == "student":
         if not assignments:
             st.info("현재 등록된 과제가 없습니다.")
         else:
+            total_pending = len([a for a in assignments if a["sub_id"] is None])
+            st.caption(f"전체 미제출 {total_pending}개")
             subj_map = defaultdict(list)
             for a in assignments:
                 subj_map[a["subject"] or "기타"].append(a)
 
-            if st.session_state.assign_subject:
-                if st.button("← 뒤로"):
-                    st.session_state.assign_subject = None
-                    st.rerun()
-
-                subject = st.session_state.assign_subject
-                alist   = subj_map.get(subject, [])
-                pending = [a for a in alist if a["sub_id"] is None]
-                done    = [a for a in alist if a["sub_id"] is not None]
-                st.markdown(f"**📖 {subject}**  —  미제출 {len(pending)}개  |  제출 완료 {len(done)}개")
-                st.divider()
-
-                for a in alist:
-                    due_str = a["due_date"] or "마감일 없음"
-                    is_late = False
-                    if a["due_date"]:
-                        try:
-                            is_late = date.today() > date.fromisoformat(a["due_date"]) and a["sub_id"] is None
-                        except: pass
-                    icon = "🔴" if is_late else ("🟡" if a["sub_id"] is None else "🟢")
-                    teacher_tag = f" · {a['teacher_name']}" if a["teacher_name"] else ""
-                    with st.expander(f"{icon} {a['title']}  —  마감: {due_str}{teacher_tag}"):
-                        st.write(f"**설명:** {a['description'] or '없음'}")
-                        if a["sub_id"] is None:
-                            with st.form(f"submit_{a['id']}"):
-                                st.markdown("##### 📤 과제 제출")
-                                uploaded_files = st.file_uploader("사진 업로드 (여러 장 가능)",
-                                    type=["jpg","jpeg","png","pdf"], key=f"file_{a['id']}",
-                                    accept_multiple_files=True)
-                                memo = st.text_area("메모 (선택)", key=f"memo_{a['id']}")
-                                if st.form_submit_button("제출하기 ✅", type="primary", use_container_width=True):
-                                    if not uploaded_files:
-                                        st.error("파일을 첨부해 주세요.")
-                                    else:
-                                        fpath = save_multiple_files(uploaded_files, sid, a["id"])
-                                        conn2 = get_db()
-                                        try:
-                                            conn2.execute(
-                                                "INSERT INTO submissions (student_id, assignment_id, file_path, memo) VALUES (?,?,?,?)",
-                                                (sid, a["id"], fpath, memo))
-                                            conn2.commit()
-                                            st.success(f"제출 완료! 🎉 ({len(uploaded_files)}개)")
-                                            st.rerun()
-                                        except sqlite3.IntegrityError:
-                                            st.warning("이미 제출한 과제입니다.")
-                                        finally:
-                                            conn2.close()
-                        else:
-                            if a["is_checked"]:
-                                st.success("✔ 선생님 확인 완료")
+            # 과목 토글
+            for subject, alist in subj_map.items():
+                pending = len([a for a in alist if a["sub_id"] is None])
+                badge = f"🔴 미제출 {pending}개" if pending else "✅ 모두 완료"
+                with st.expander(f"📖 {subject}  —  {badge}", expanded=(pending > 0)):
+                    for a in alist:
+                        due_str = a["due_date"] or "마감일 없음"
+                        is_late = False
+                        if a["due_date"]:
+                            try:
+                                is_late = date.today() > date.fromisoformat(a["due_date"]) and a["sub_id"] is None
+                            except: pass
+                        icon = "🔴" if is_late else ("🟡" if a["sub_id"] is None else "🟢")
+                        teacher_tag = f" · {a['teacher_name']}" if a["teacher_name"] else ""
+                        with st.expander(f"{icon} {a['title']}  —  마감: {due_str}{teacher_tag}"):
+                            st.write(f"**설명:** {a['description'] or '없음'}")
+                            if a["sub_id"] is None:
+                                with st.form(f"submit_{a['id']}"):
+                                    st.markdown("##### 📤 과제 제출")
+                                    uploaded_files = st.file_uploader("사진 업로드 (여러 장 가능)",
+                                        type=["jpg","jpeg","png","pdf"], key=f"file_{a['id']}",
+                                        accept_multiple_files=True)
+                                    memo = st.text_area("메모 (선택)", key=f"memo_{a['id']}")
+                                    if st.form_submit_button("제출하기 ✅", type="primary", use_container_width=True):
+                                        if not uploaded_files:
+                                            st.error("파일을 첨부해 주세요.")
+                                        else:
+                                            fpath = save_multiple_files(uploaded_files, sid, a["id"])
+                                            conn2 = get_db()
+                                            try:
+                                                conn2.execute(
+                                                    "INSERT INTO submissions (student_id, assignment_id, file_path, memo) VALUES (?,?,?,?)",
+                                                    (sid, a["id"], fpath, memo))
+                                                conn2.commit()
+                                                st.success(f"제출 완료! 🎉 ({len(uploaded_files)}개)")
+                                                st.rerun()
+                                            except sqlite3.IntegrityError:
+                                                st.warning("이미 제출한 과제입니다.")
+                                            finally:
+                                                conn2.close()
                             else:
-                                st.info("📨 제출 완료 (검토 중)")
-                            st.caption(f"제출 시각: {a['submitted_at']}")
-                            if a["teacher_comment"]:
-                                st.info(f"💬 선생님 코멘트: {a['teacher_comment']}")
-            else:
-                # 과목 폴더 목록
-                total_pending = len([a for a in assignments if a["sub_id"] is None])
-                st.caption(f"전체 미제출 {total_pending}개")
-                st.divider()
-                cols = st.columns(3)
-                for i, (subject, alist) in enumerate(subj_map.items()):
-                    pending = len([a for a in alist if a["sub_id"] is None])
-                    done    = len([a for a in alist if a["sub_id"] is not None])
-                    badge   = f"🔴 미제출 {pending}" if pending else "✅ 모두 완료"
-                    with cols[i % 3]:
-                        if st.button(f"📖 {subject}\n과제 {len(alist)}개 · {badge}", key=f"asubj_{subject}", use_container_width=True):
-                            st.session_state.assign_subject = subject
-                            st.rerun()
+                                if a["is_checked"]:
+                                    st.success("✔ 선생님 확인 완료")
+                                else:
+                                    st.info("📨 제출 완료 (검토 중)")
+                                st.caption(f"제출 시각: {a['submitted_at']}")
+                                if a["teacher_comment"]:
+                                    st.info(f"💬 선생님 코멘트: {a['teacher_comment']}")
 
     elif page == "🎬 강의 영상":
         st.subheader("🎬 강의 영상")
-
-        # 세션 초기화
-        if "video_subject" not in st.session_state:
-            st.session_state.video_subject = None
-        if "video_folder" not in st.session_state:
-            st.session_state.video_folder = None
-
         conn = get_db()
         videos = conn.execute("""
             SELECT v.*, t.name AS teacher_name, t.subject
@@ -379,50 +349,15 @@ if st.session_state.role == "student":
             for v in videos:
                 subj_map[v["subject"] or "기타"][v["category"] or "기본"].append(v)
 
-            # 뒤로가기
-            if st.session_state.video_folder:
-                if st.button("← 뒤로"):
-                    st.session_state.video_folder = None
-                    st.rerun()
-                # 영상 목록 표시
-                subject = st.session_state.video_subject
-                folder  = st.session_state.video_folder
-                vlist   = subj_map.get(subject, {}).get(folder, [])
-                st.markdown(f"**📖 {subject}  >  📁 {folder}** ({len(vlist)}개)")
-                st.divider()
-                for v in vlist:
-                    with st.expander(f"🎬 {v['title']}"):
-                        st.components.v1.iframe(youtube_embed_url(v["youtube_url"]), height=380)
-
-            elif st.session_state.video_subject:
-                if st.button("← 뒤로"):
-                    st.session_state.video_subject = None
-                    st.rerun()
-                # 폴더 목록 표시
-                subject  = st.session_state.video_subject
-                cat_map  = subj_map.get(subject, {})
-                st.markdown(f"**📖 {subject}** — 폴더 선택")
-                st.divider()
-                cols = st.columns(3)
-                for i, (cat, vlist) in enumerate(cat_map.items()):
-                    with cols[i % 3]:
-                        if st.button(f"📁 {cat}\n({len(vlist)}개)", key=f"folder_{cat}", use_container_width=True):
-                            st.session_state.video_subject = subject
-                            st.session_state.video_folder  = cat
-                            st.rerun()
-
-            else:
-                # 과목 목록 표시
-                st.markdown("**과목 선택**")
-                st.divider()
-                cols = st.columns(3)
-                for i, (subject, cat_map) in enumerate(subj_map.items()):
-                    total_videos = sum(len(v) for v in cat_map.values())
-                    with cols[i % 3]:
-                        if st.button(f"📖 {subject}\n({total_videos}개)", key=f"subj_{subject}", use_container_width=True):
-                            st.session_state.video_subject = subject
-                            st.session_state.video_folder  = None
-                            st.rerun()
+            # 과목 토글 > 폴더 토글 > 영상 토글
+            for subject, cat_map in subj_map.items():
+                total = sum(len(vl) for vl in cat_map.values())
+                with st.expander(f"📖 {subject}  —  영상 {total}개"):
+                    for cat, vlist in cat_map.items():
+                        with st.expander(f"📁 {cat}  ({len(vlist)}개)"):
+                            for v in vlist:
+                                with st.expander(f"🎬 {v['title']}"):
+                                    st.components.v1.iframe(youtube_embed_url(v["youtube_url"]), height=380)
 
     else:
         st.subheader("✅ 제출 완료 목록")
