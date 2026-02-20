@@ -6,6 +6,7 @@ from datetime import datetime, date
 from pathlib import Path
 from collections import defaultdict
 import re
+import requests
 
 st.set_page_config(
     page_title="패스파인더 과제 관리",
@@ -38,6 +39,29 @@ def youtube_embed_url(url):
         if m:
             return f"https://www.youtube.com/embed/{m.group(1)}"
     return url
+
+def send_aligo_sms(receivers: list, message: str, sender: str = None) -> dict:
+    """알리고 API로 문자 전송. receivers = ['010-xxxx-xxxx', ...]"""
+    try:
+        api_key  = st.secrets.get("ALIGO_API_KEY", "")
+        user_id  = st.secrets.get("ALIGO_USER_ID", "")
+        sender   = sender or st.secrets.get("ALIGO_SENDER", "")
+        if not all([api_key, user_id, sender]):
+            return {"result_code": -99, "message": "알리고 API 설정이 없습니다. Streamlit Secrets를 확인하세요."}
+        # 번호 정리 (하이픈 제거)
+        cleaned = [r.replace("-", "").strip() for r in receivers if r]
+        resp = requests.post("https://apis.aligo.in/send/", data={
+            "key":      api_key,
+            "user_id":  user_id,
+            "sender":   sender.replace("-", ""),
+            "receiver": ",".join(cleaned),
+            "msg":      message,
+            "msg_type": "SMS" if len(message) <= 90 else "LMS",
+            "title":    "패스파인더 국어학원" if len(message) > 90 else "",
+        }, timeout=10)
+        return resp.json()
+    except Exception as e:
+        return {"result_code": -1, "message": str(e)}
 
 def get_db():
     conn = sqlite3.connect("homework.db", check_same_thread=False)
@@ -124,6 +148,8 @@ def init_db():
         "ALTER TABLE assignments ADD COLUMN teacher_id INTEGER",
         "ALTER TABLE questions ADD COLUMN image_paths TEXT",
         "ALTER TABLE students ADD COLUMN phone TEXT",
+        "ALTER TABLE students ADD COLUMN parent_name TEXT",
+        "ALTER TABLE students ADD COLUMN parent_phone TEXT",
         """CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER NOT NULL,
@@ -540,6 +566,35 @@ elif st.session_state.role == "teacher":
         c2.metric("제출 건수", n_s)
         c3.metric("확인 완료", n_c)
         st.divider()
+
+        # 반별 학생 현황
+        st.subheader("👥 반별 학생 현황")
+        conn = get_db()
+        # 내 과제가 배정된 반의 학생들만 조회
+        assigned = conn.execute("""
+            SELECT DISTINCT grade, class_name FROM assignments WHERE teacher_id=? ORDER BY grade, class_name
+        """, (tid,)).fetchall()
+        conn.close()
+
+        if not assigned:
+            st.info("아직 등록된 과제가 없습니다.")
+        else:
+            for row in assigned:
+                grade, class_name = row["grade"], row["class_name"]
+                conn = get_db()
+                students = conn.execute(
+                    "SELECT * FROM students WHERE grade=? AND class_name=? ORDER BY name",
+                    (grade, class_name)).fetchall()
+                conn.close()
+                with st.expander(f"📋 {grade} {class_name}  —  {len(students)}명"):
+                    if not students:
+                        st.info("등록된 학생이 없습니다.")
+                    else:
+                        cols = st.columns(4)
+                        for i, s in enumerate(students):
+                            cols[i % 4].markdown(f"• {s['name']}")
+
+        st.divider()
         st.subheader("📬 최근 제출")
         conn = get_db()
         recent = conn.execute("""
@@ -631,62 +686,127 @@ elif st.session_state.role == "teacher":
         c3.metric("제출률", f"{pct}%")
         st.progress(pct/100)
 
-        # 미제출 학생 카카오톡 알림
+        # 미제출 학생 알림
         missing = [s for s in all_students if s["id"] not in sub_map]
         if missing:
             st.divider()
-            with st.expander(f"📱 미제출 학생 카카오톡 알림 ({len(missing)}명)"):
+            with st.expander(f"📱 미제출 학생 알림 ({len(missing)}명)"):
                 due_str = sel_a["due_date"] or "미정"
-
-                # 메시지 템플릿 커스터마이즈
                 default_tmpl = f"[패스파인더 국어학원] {{name}} 학생, 📚 {sel_a['title']} 과제(마감: {due_str})가 아직 제출되지 않았습니다. 빠른 제출 부탁드립니다!"
                 tmpl = st.text_area("메시지 템플릿 ({name} 은 학생 이름으로 자동 치환)", value=default_tmpl, height=100)
                 st.divider()
 
-                # 학생별 카카오톡 링크 생성
-                for s in missing:
-                    phone = (s["phone"] or "").replace("-", "").strip()
-                    msg_text = tmpl.replace("{name}", s["name"])
+                tab_bulk, tab_individual = st.tabs(["📤 일괄 전송 (알리고 SMS)", "👤 개별 전송"])
 
-                    col1, col2, col3 = st.columns([2, 2, 3])
-                    col1.markdown(f"**{s['name']}** ({s['grade']} {s['class_name']})")
+                # ── 일괄 전송 ──────────────────────────────────────────────────
+                with tab_bulk:
+                    # 학부모 연락처 우선, 없으면 학생 연락처
+                    def get_contact(s):
+                        return s["parent_phone"] or s["phone"] or ""
+                    def get_contact_label(s):
+                        p = s["parent_phone"]
+                        if p: return f"{s['parent_name'] or '학부모'} {p}"
+                        if s["phone"]: return f"학생 {s['phone']}"
+                        return ""
+                    has_phone = [s for s in missing if get_contact(s)]
+                    no_phone  = [s for s in missing if not get_contact(s)]
+                    if no_phone:
+                        st.warning(f"연락처 미등록 {len(no_phone)}명: {', '.join([s['name'] for s in no_phone])} — 관리자 페이지에서 등록 필요")
+                    if has_phone:
+                        st.markdown("**전송할 학생 선택** (체크 후 전송)")
+                        st.caption("✅ 알리고 API는 한 명씩 개별 전송 → 아이폰에서도 각자 따로 문자 수신")
 
-                    if phone:
-                        import urllib.parse
-                        col2.markdown(f"📞 `{s['phone']}`")
-                        # 클립보드 복사 + 카카오톡 열기 (각각 + 통합 버튼)
-                        import urllib.parse
-                        encoded = urllib.parse.quote(msg_text)
-                        sms_link = f"sms:{phone}?body={encoded}"
-                        btn_html = f"""
-<div style="display:flex;gap:8px;flex-wrap:wrap;">
-  <button onclick="navigator.clipboard.writeText({repr(msg_text)}).then(()=>{{this.innerText='✅ 복사됨';setTimeout(()=>this.innerText='📋 메시지 복사',2000)}})"
-    style="background:#4f86f7;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.85rem;">
-    📋 메시지 복사
-  </button>
-  <a href="kakaotalk://" target="_blank">
-    <button style="background:#FEE500;color:#3C1E1E;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.85rem;">
-      💬 카카오톡 열기
-    </button>
-  </a>
-  <button onclick="navigator.clipboard.writeText({repr(msg_text)}).then(()=>{{ window.open('kakaotalk://','_blank'); this.innerText='✅ 완료!';setTimeout(()=>this.innerText='⚡ 복사+카카오톡',2000) }})"
-    style="background:#3C1E1E;color:#FEE500;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.85rem;">
-    ⚡ 복사+카카오톡
-  </button>
-  <a href="{sms_link}" target="_blank">
-    <button style="background:#4CAF50;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.85rem;">
-      📱 문자 전송
-    </button>
-  </a>
-</div>"""
-                        col3.markdown(btn_html, unsafe_allow_html=True)
+                        # 전체 선택/해제
+                        col_all1, col_all2, _ = st.columns([1,1,4])
+                        if col_all1.button("✅ 전체 선택", key="chk_all", use_container_width=True):
+                            for s in has_phone:
+                                st.session_state[f"chk_{s['id']}"] = True
+                            st.rerun()
+                        if col_all2.button("⬜ 전체 해제", key="unchk_all", use_container_width=True):
+                            for s in has_phone:
+                                st.session_state[f"chk_{s['id']}"] = False
+                            st.rerun()
+
+                        st.divider()
+                        # 개별 체크박스
+                        selected = []
+                        for s in has_phone:
+                            key = f"chk_{s['id']}"
+                            if key not in st.session_state:
+                                st.session_state[key] = True
+                            checked = st.checkbox(
+                                f"**{s['name']}** ({s['grade']} {s['class_name']})  📞 {get_contact_label(s)}",
+                                value=st.session_state[key], key=key
+                            )
+                            if checked:
+                                selected.append(s)
+
+                        if selected:
+                            st.divider()
+                            with st.expander(f"📋 전송될 메시지 미리보기 ({len(selected)}명)"):
+                                for s in selected:
+                                    st.info(f"**{s['name']}** → {tmpl.replace(chr(123)+'name'+chr(125), s['name'])}")
+
+                            if st.button(f"🚀 선택한 {len(selected)}명에게 개별 문자 전송", type="primary", use_container_width=True, key="bulk_send"):
+                                success_cnt, fail_cnt = 0, 0
+                                prog = st.progress(0)
+                                status_box = st.empty()
+                                for i, s in enumerate(selected):
+                                    msg = tmpl.replace("{name}", s["name"])
+                                    status_box.caption(f"전송 중... {s['name']} ({i+1}/{len(selected)})")
+                                    result = send_aligo_sms([get_contact(s)], msg)
+                                    if str(result.get("result_code")) == "1":
+                                        success_cnt += 1
+                                    else:
+                                        fail_cnt += 1
+                                        st.error(f"{s['name']}: {result.get('message','전송 오류')}")
+                                    prog.progress((i+1)/len(selected))
+                                prog.empty()
+                                status_box.empty()
+                                if success_cnt:
+                                    st.success(f"✅ {success_cnt}명 개별 전송 완료! (각자 따로 수신)")
+                                if fail_cnt:
+                                    st.error(f"❌ {fail_cnt}명 전송 실패 — 알리고 설정을 확인해주세요.")
+                        else:
+                            st.info("전송할 학생을 선택해주세요.")
                     else:
-                        col2.caption("연락처 미등록")
-                        col3.caption("👉 관리자 페이지에서 연락처 등록 필요")
+                        st.info("연락처가 등록된 학생이 없습니다.")
 
-                    # 메시지 미리보기
-                    with st.expander(f"  메시지 미리보기 — {s['name']}", expanded=False):
-                        st.info(msg_text)
+                # ── 개별 전송 ──────────────────────────────────────────────────
+                with tab_individual:
+                    import urllib.parse
+                    for s in missing:
+                        phone    = get_contact(s)
+                        msg_text = tmpl.replace("{name}", s["name"])
+                        col1, col2, col3 = st.columns([2, 2, 4])
+                        col1.markdown(f"**{s['name']}** ({s['grade']} {s['class_name']})")
+                        if phone:
+                            col2.markdown(f"📞 `{get_contact_label(s)}`")
+                            encoded  = urllib.parse.quote(msg_text)
+                            sms_link = f"sms:{phone}?body={encoded}"
+                            btn_html = f"""<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0;">
+  <button onclick="navigator.clipboard.writeText({repr(msg_text)}).then(()=>{{this.innerText='✅ 복사됨';setTimeout(()=>this.innerText='📋 복사',2000)}})"
+    style="background:#4f86f7;color:white;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.8rem;">📋 복사</button>
+  <a href="kakaotalk://" target="_blank"><button
+    style="background:#FEE500;color:#3C1E1E;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.8rem;">💬 카카오톡</button></a>
+  <button onclick="navigator.clipboard.writeText({repr(msg_text)}).then(()=>{{window.open('kakaotalk://','_blank');this.innerText='✅ 완료';setTimeout(()=>this.innerText='⚡ 복사+카톡',2000)}})"
+    style="background:#3C1E1E;color:#FEE500;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.8rem;">⚡ 복사+카톡</button>
+  <a href="{sms_link}" target="_blank"><button
+    style="background:#4CAF50;color:white;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.8rem;">📱 문자</button></a>
+</div>"""
+                            col3.markdown(btn_html, unsafe_allow_html=True)
+                            if st.button("📤 자동 문자전송 (알리고)", key=f"singleSend_{s['id']}"):
+                                result = send_aligo_sms([get_contact(s)], msg_text)
+                                if str(result.get("result_code")) == "1":
+                                    st.success(f"✅ {s['name']} 전송 완료!")
+                                else:
+                                    st.error(f"전송 실패: {result.get('message','오류')}")
+                        else:
+                            col2.caption("연락처 미등록")
+                            col3.caption("👉 관리자에서 등록 필요")
+                        with st.expander(f"메시지 미리보기 — {s['name']}", expanded=False):
+                            st.info(msg_text)
+                        st.divider()
 
         st.divider()
         for s in all_students:
@@ -752,13 +872,13 @@ elif st.session_state.role == "teacher":
                 for q in questions:
                     student_tag = f"{q['student_name']} ({q['grade']} {q['class_name']})"
                     with st.expander(f"⏳ 미답변  |  {q['title']}  —  {student_tag}  {q['created_at'][:10]}"):
-                        st.markdown("**질문 내용:**")
-                        st.write(q["content"])
                         if q["image_paths"]:
                             st.markdown("**📸 첨부 이미지:**")
                             for fp in q["image_paths"].split("|"):
                                 if os.path.exists(fp):
                                     st.image(fp, use_column_width=True)
+                        st.markdown("**질문 내용:**")
+                        st.write(q["content"])
                         st.divider()
                         with st.form(f"answer_unanswered_{q['id']}"):
                             answer_text = st.text_area("답변 입력", value="", height=120)
@@ -793,13 +913,13 @@ elif st.session_state.role == "teacher":
                     status = "✅ 답변 완료" if q["is_answered"] else "⏳ 미답변"
                     student_tag = f"{q['student_name']} ({q['grade']} {q['class_name']})"
                     with st.expander(f"{status}  |  {q['title']}  —  {student_tag}  {q['created_at'][:10]}"):
-                        st.markdown("**질문 내용:**")
-                        st.write(q["content"])
                         if q["image_paths"]:
                             st.markdown("**📸 첨부 이미지:**")
                             for fp in q["image_paths"].split("|"):
                                 if os.path.exists(fp):
                                     st.image(fp, use_column_width=True)
+                        st.markdown("**질문 내용:**")
+                        st.write(q["content"])
                         st.divider()
                         if q["is_answered"] and q["answer"]:
                             st.markdown("**내 답변:**")
@@ -984,23 +1104,36 @@ elif st.session_state.role == "admin":
             import pandas as pd
             if students:
                 df = pd.DataFrame([dict(s) for s in students])
-                df["phone"] = df.get("phone", "")
-                df = df[["name","student_code","grade","class_name","phone","created_at"]]
-                df.columns = ["이름","학번","학년","반","연락처","등록일"]
+                df["phone"]        = df.get("phone", "")
+                df["parent_name"]  = df.get("parent_name", "")
+                df["parent_phone"] = df.get("parent_phone", "")
+                df = df[["name","student_code","grade","class_name","phone","parent_name","parent_phone","created_at"]]
+                df.columns = ["이름","학번","학년","반","학생연락처","학부모이름","학부모연락처","등록일"]
                 st.dataframe(df, use_container_width=True, hide_index=True)
                 st.divider()
                 st.markdown("#### 📱 연락처 등록/수정")
                 s_options = {f"{s['name']} ({s['grade']} {s['class_name']})": s["id"] for s in students}
-                sel_s = st.selectbox("학생 선택", list(s_options.keys()), key="phone_student")
-                sel_id = s_options[sel_s]
-                sel_info = next(s for s in students if s["id"] == sel_id)
-                new_phone = st.text_input("연락처 (학부모 포함)", value=sel_info["phone"] or "", placeholder="010-0000-0000")
-                if st.button("연락처 저장 ✅", type="primary"):
+                sel_s     = st.selectbox("학생 선택", list(s_options.keys()), key="phone_student")
+                sel_id    = s_options[sel_s]
+                sel_info  = next(s for s in students if s["id"] == sel_id)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**👤 학생 연락처**")
+                    new_phone = st.text_input("학생 전화번호", value=sel_info["phone"] or "", placeholder="010-0000-0000", key="s_phone")
+                with col2:
+                    st.markdown("**👨‍👩‍👧 학부모 정보**")
+                    new_parent_name  = st.text_input("학부모 이름", value=sel_info["parent_name"] or "", placeholder="홍길동 어머니", key="p_name")
+                    new_parent_phone = st.text_input("학부모 전화번호", value=sel_info["parent_phone"] or "", placeholder="010-0000-0000", key="p_phone")
+
+                if st.button("저장 ✅", type="primary", use_container_width=True):
                     conn = get_db()
-                    conn.execute("UPDATE students SET phone=? WHERE id=?", (new_phone.strip(), sel_id))
+                    conn.execute(
+                        "UPDATE students SET phone=?, parent_name=?, parent_phone=? WHERE id=?",
+                        (new_phone.strip(), new_parent_name.strip(), new_parent_phone.strip(), sel_id))
                     conn.commit()
                     conn.close()
-                    st.success("연락처가 저장되었습니다!")
+                    st.success("연락처가 저장되었습니다! ✅")
                     st.rerun()
             else:
                 st.info("등록된 학생이 없습니다.")
