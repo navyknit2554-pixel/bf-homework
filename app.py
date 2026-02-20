@@ -217,7 +217,7 @@ if st.session_state.role is None:
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.markdown("### 🎒 학생 로그인  <span style='font-size:0.75rem; color:#64748b; font-weight:400'>학번은 학번 생성기에서 발급받으세요.</span>", unsafe_allow_html=True)
+        st.subheader("🎒 학생 로그인")
         with st.form("student_login"):
             s_name = st.text_input("이름", placeholder="홍길동")
             s_code = st.text_input("학번 (6자리)", placeholder="739281")
@@ -245,7 +245,6 @@ if st.session_state.role is None:
         with st.form("teacher_login"):
             t_user = st.text_input("아이디", placeholder="teacher01")
             t_pw   = st.text_input("비밀번호", type="password")
-            st.write("")  # 높이 맞춤
             if st.form_submit_button("로그인", use_container_width=True, type="primary"):
                 conn = get_db()
                 row = conn.execute("SELECT * FROM teachers WHERE username=? AND password_hash=?",
