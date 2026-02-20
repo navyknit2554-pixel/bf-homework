@@ -1326,7 +1326,7 @@ elif st.session_state.role == "admin":
                         value=ec.get("subject",""),
                         key=f"tt_{sel_grade}_{sel_class}_{d}_{p}",
                         placeholder="과목", label_visibility="collapsed")
-                    inputs[(d, p)] = subj.strip()
+                    inputs[(d, p)] = (subj or "").strip()
 
             with st.expander("👩‍🏫 담당 선생님 이름 입력 (선택)"):
                 for p in PERIODS:
@@ -1339,7 +1339,7 @@ elif st.session_state.role == "admin":
                                 value=ec.get("teacher_name",""),
                                 key=f"tt_t_{sel_grade}_{sel_class}_{d}_{p}",
                                 placeholder="선생님", label_visibility="collapsed")
-                            teacher_inputs[(d, p)] = t_name.strip()
+                            teacher_inputs[(d, p)] = (t_name or "").strip()
 
             if st.button("💾 주간 시간표 저장", type="primary", use_container_width=True, key="save_tt"):
                 conn = get_db()
