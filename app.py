@@ -665,7 +665,11 @@ if st.session_state.role == "student":
                     tname = n["teacher_name_real"] or ""
                     st.markdown(
                         f"<div style='background:#1e293b;border-left:4px solid #3b82f6;border-radius:6px;padding:14px 16px;margin-bottom:10px;'>"
-                        f"<div style='font-size:0.75rem;color:#64748b;margin-bottom:4px;'>📘 {label} · {tname} 선생님 · {n['created_at'][:10]}</div>"
+                        f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
+                        f"<span style='background:#1d4ed8;color:#fff;font-size:0.85rem;font-weight:bold;padding:3px 10px;border-radius:20px;'>{label}</span>"
+                        f"<span style='color:#93c5fd;font-size:0.9rem;font-weight:600;'>{tname} 선생님</span>"
+                        f"<span style='color:#475569;font-size:0.75rem;margin-left:auto;'>{n['created_at'][:10]}</span>"
+                        f"</div>"
                         f"<div style='font-weight:bold;font-size:1rem;margin-bottom:8px;'>{n['title']}</div>"
                         f"<div style='color:#cbd5e1;white-space:pre-wrap;'>{n['content']}</div>"
                         f"</div>", unsafe_allow_html=True)
@@ -1522,18 +1526,26 @@ elif st.session_state.role == "admin":
                 sel_teacher = t_opts[sel_t_key]
                 st.caption(f"📌 {sel_teacher['name']} 선생님의 수업을 요일×교시에 배치하세요.")
 
-                # 담당 가능한 반 목록
+                # 수업 배정된 반만 표시 (student_teachers 기준)
                 conn = get_db()
-                all_classes = conn.execute(
-                    "SELECT DISTINCT grade, class_name FROM students ORDER BY grade, class_name"
-                ).fetchall()
-                # 교시별 시간 (전체 반 통합 - 첫 번째 반 기준)
+                assigned_classes = conn.execute("""
+                    SELECT DISTINCT s.grade, s.class_name
+                    FROM student_teachers st
+                    JOIN students s ON st.student_id = s.id
+                    WHERE st.teacher_id = ?
+                    ORDER BY s.grade, s.class_name
+                """, (sel_teacher["id"],)).fetchall()
                 existing_tt = conn.execute(
                     "SELECT * FROM timetable WHERE teacher_name=?",
                     (sel_teacher["name"],)).fetchall()
                 conn.close()
 
-                CLASS_OPTIONS = ["— 없음 —"] + [f"{r['grade']} {r['class_name']}" for r in all_classes]
+                if not assigned_classes:
+                    st.warning(f"⚠️ {sel_teacher['name']} 선생님에게 배정된 학생이 없습니다. 학생 관리 → 수업 배정에서 먼저 배정해주세요.")
+                    st.stop()
+
+                CLASS_OPTIONS = ["— 없음 —"] + [f"{r['grade']} {r['class_name']}" for r in assigned_classes]
+                st.caption(f"📌 배정된 반: {', '.join([f"{r['grade']} {r['class_name']}" for r in assigned_classes])}")
                 # 현재 저장된 데이터: {(day, period): "고1 A반"}
                 cur_map = {}
                 for r in existing_tt:
