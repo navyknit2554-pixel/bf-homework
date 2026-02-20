@@ -655,6 +655,9 @@ elif st.session_state.role == "teacher":
                         import urllib.parse
                         col2.markdown(f"📞 `{s['phone']}`")
                         # 클립보드 복사 + 카카오톡 열기 (각각 + 통합 버튼)
+                        import urllib.parse
+                        encoded = urllib.parse.quote(msg_text)
+                        sms_link = f"sms:{phone}?body={encoded}"
                         btn_html = f"""
 <div style="display:flex;gap:8px;flex-wrap:wrap;">
   <button onclick="navigator.clipboard.writeText({repr(msg_text)}).then(()=>{{this.innerText='✅ 복사됨';setTimeout(()=>this.innerText='📋 메시지 복사',2000)}})"
@@ -670,6 +673,11 @@ elif st.session_state.role == "teacher":
     style="background:#3C1E1E;color:#FEE500;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.85rem;">
     ⚡ 복사+카카오톡
   </button>
+  <a href="{sms_link}" target="_blank">
+    <button style="background:#4CAF50;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:0.85rem;">
+      📱 문자 전송
+    </button>
+  </a>
 </div>"""
                         col3.markdown(btn_html, unsafe_allow_html=True)
                     else:
