@@ -1,5 +1,26 @@
 import streamlit as st
 
+# CSS와 메타 태그를 변수에 담습니다.
+html_code = """
+    <head>
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="theme-color" content="#050d1a">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+        <style>
+            /* 노치 영역까지 배경색 강제 확장 */
+            .stApp {
+                background-color: #050d1a !important;
+            }
+            header[data-testid="stHeader"] {
+                background: none !important;
+                background-color: transparent !important;
+            }
+        </style>
+    </head>
+"""
+st.markdown(html_code, unsafe_allow_html=True)
+
 # 1. 페이지 설정 (오타 주의: 딱 한 번만 써야 합니다)
 st.set_page_config(page_title="My App", layout="wide")
 
