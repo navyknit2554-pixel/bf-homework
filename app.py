@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.set_page_configst.set_page_config(page_title="My App", layout="wide")
+st.set_page_configst(page_title="My App", layout="wide")
 
 st.markdown(
     """
