@@ -1,22 +1,27 @@
 import streamlit as st
 
-# 다크 모드 배경색인 #0e1117(스트림릿 기본 다크색) 혹은 본인의 배경색에 맞춰 설정
-st.set_page_config(
-    page_title="My App",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="My App", layout="wide")
 
-# 모바일 브라우저 상단 바 색상을 변경하는 HTML 메타 태그 주입
+# 아이폰/안드로이드 상단바 색상 강제 일치 코드
 st.markdown(
     """
-    <meta name="theme-color" content="#0e1117">
     <style>
-        /* 상단 헤더 투명화 및 배경색 통일 */
+        /* 1. 스트림릿 상단 하얀 바 자체를 투명하게 제거 */
         header[data-testid="stHeader"] {
-            background-color: rgba(0,0,0,0);
+            background-color: rgba(0, 0, 0, 0) !important;
+            backdrop-filter: blur(0px) !important;
+        }
+        
+        /* 2. 전체 배경색 강제 지정 (본인의 배경색 HEX 코드로 변경하세요) */
+        .main {
+            background-color: #0e1117;
         }
     </style>
+    
+    <meta name="theme-color" content="#0e1117">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     """,
     unsafe_allow_html=True
 )
