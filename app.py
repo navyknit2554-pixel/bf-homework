@@ -1,33 +1,37 @@
 import streamlit as st
 
-st.set_page_configst(page_title="My App", layout="wide")
+# 1. 페이지 설정 (오타 주의: 딱 한 번만 써야 합니다)
+st.set_page_config(page_title="My App", layout="wide")
 
+# 2. 배경색 일체화 및 워터마크 제거 (HEX 코드 #050d1a 반영)
 st.markdown(
     """
     <style>
-        /* 모든 최상위 컨테이너의 배경색을 강제 고정 */
-        html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
+        /* 배경색 강제 고정 */
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
             background-color: #050d1a !important;
         }
         
-        /* 세이프 영역(노치 부분)까지 배경색 확장 */
-        body {
-            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-        }
+        /* 헤더/푸터/메뉴 숨기기 */
+        header[data-testid="stHeader"] { visibility: hidden; }
+        footer { visibility: hidden; }
+        #MainMenu { visibility: hidden; }
 
-        /* 헤더 숨기기 */
-        header[data-testid="stHeader"] {
-            display: none !important;
+        /* 상단 여백 제거 */
+        .main .block-container {
+            padding-top: 0rem !important;
         }
     </style>
     
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#050d1a">
     """,
     unsafe_allow_html=True
 )
+
+st.write("이제 에러 없이 상단바 색상이 맞을 거예요!")
 import streamlit as st
 import sqlite3
 import os
