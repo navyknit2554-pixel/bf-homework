@@ -1,30 +1,30 @@
 import streamlit as st
 
-st.set_page_config(page_title="My App", layout="wide")
+st.set_page_configst.set_page_config(page_title="My App", layout="wide")
 
-# 사용 중인 배경색(#050d1a)에 완벽하게 맞춘 코드
 st.markdown(
     """
     <style>
-        /* 1. 앱 전체 배경색 강제 일치 */
-        html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+        /* 모든 최상위 컨테이너의 배경색을 강제 고정 */
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"], .main {
             background-color: #050d1a !important;
         }
-
-        /* 2. 상단 헤더 투명화 및 여백 제거 */
-        header[data-testid="stHeader"] {
-            background: rgba(0,0,0,0) !important;
-        }
         
-        .main .block-container {
-            padding-top: 0rem !important;
+        /* 세이프 영역(노치 부분)까지 배경색 확장 */
+        body {
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+
+        /* 헤더 숨기기 */
+        header[data-testid="stHeader"] {
+            display: none !important;
         }
     </style>
     
-    <meta name="theme-color" content="#050d1a">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#050d1a">
     """,
     unsafe_allow_html=True
 )
