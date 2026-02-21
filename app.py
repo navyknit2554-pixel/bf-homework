@@ -31,7 +31,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-st.write("이제 에러 없이 상단바 색상이 맞을 거예요!")
+
 import streamlit as st
 import sqlite3
 import os
