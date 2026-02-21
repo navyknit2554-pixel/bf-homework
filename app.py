@@ -1,5 +1,31 @@
 import streamlit as st
+# 다크모드 전용 상단바 일체화 끝판왕 코드
+st.markdown(
+    """
+    <style>
+        /* 1. 웹 전체 배경색을 스트림릿 다크모드 기본색(#0e1117)으로 강제 고정 */
+        html, body, [data-testid="stAppViewContainer"] {
+            background-color: #0e1117 !important;
+        }
 
+        /* 2. 상단 헤더 투명화 및 여백 제거 */
+        header[data-testid="stHeader"] {
+            background: rgba(0,0,0,0) !important;
+        }
+        
+        /* 3. 상단 콘텐츠 밀림 방지 */
+        .main .block-container {
+            padding-top: 0rem !important;
+        }
+    </style>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0e1117">
+    """,
+    unsafe_allow_html=True
+)
 st.set_page_config(page_title="My App", layout="wide")
 
 # 아이폰/안드로이드 상단바 색상 강제 일치 코드
