@@ -17,7 +17,7 @@ st.set_page_config(
 import streamlit as st
 
 # 페이지 설정 (선택 사항)
-st.set_page_config(page_title="나의 멋진 앱", layout="wide")
+st.set_page_config(page_title="모두의 학습 관리", layout="wide")
 
 # 워터마크와 메뉴를 숨기는 CSS
 hide_streamlit_style = """
@@ -29,7 +29,7 @@ hide_streamlit_style = """
             """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-st.title("워터마크가 사라졌어요! 🎉")
+st.title
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
