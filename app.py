@@ -14,6 +14,22 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+import streamlit as st
+
+# 페이지 설정 (선택 사항)
+st.set_page_config(page_title="나의 멋진 앱", layout="wide")
+
+# 워터마크와 메뉴를 숨기는 CSS
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+st.title("워터마크가 사라졌어요! 🎉")
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
