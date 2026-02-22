@@ -18,9 +18,8 @@ def load_local_logo(filepath):
         with open(filepath, "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
         return f"data:image/png;base64,{b64}"
-    except Exception as e:
-        st.error(f"로고 로드 실패: {e}")
-        return None
+   except:
+    return None
 
 icon = Image.open("icon.png")
 
