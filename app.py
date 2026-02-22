@@ -24,7 +24,7 @@ sub_logo = load_local_logo("brandlogo.png")
 try:
     icon = Image.open("icon.png")
 except:
-    icon = "📚"
+    icon = "✏️"
 
 st.set_page_config(
     page_title="모두의 학습 관리",
@@ -205,7 +205,7 @@ def send_aligo_sms(receivers: list, message: str, sender: str = None) -> dict:
             "receiver": ",".join(cleaned),
             "msg":      message,
             "msg_type": "SMS" if len(message) <= 90 else "LMS",
-            "title":    "패스파인더 국어학원" if len(message) > 90 else "",
+            "title":    "모두의 학습 관리 - ◇◇◇학원" if len(message) > 90 else "",
         }, timeout=10)
         return resp.json()
     except Exception as e:
@@ -543,7 +543,7 @@ if st.session_state.role is None:
             if st.button("🎒  학생이신가요?", use_container_width=True, key="sel_student"):
                 st.session_state.login_type = "student"
                 st.rerun()
-            if st.button("👩‍🏫  선생님이신가요?", use_container_width=True, key="sel_teacher"):
+            if st.button("✏️  선생님이신가요?", use_container_width=True, key="sel_teacher"):
                 st.session_state.login_type = "teacher"
                 st.rerun()
             if st.button("👨‍👩‍👧  학부모이신가요?", use_container_width=True, key="sel_parent"):
@@ -593,7 +593,7 @@ if st.session_state.role is None:
                         st.rerun()
 
     elif ltype == "teacher":
-        st.subheader("👩‍🏫 선생님 로그인")
+        st.subheader("✏️ 선생님 로그인")
         with st.form("teacher_login"):
             t_user = st.text_input("아이디", placeholder="teacher01")
             t_pw   = st.text_input("비밀번호", type="password")
@@ -1332,7 +1332,7 @@ elif st.session_state.role == "teacher":
     tid   = st.session_state.teacher_id
 
     with st.sidebar:
-        st.markdown(f"### 👩‍🏫 {tinfo['name']} 선생님")
+        st.markdown(f"### ✏️ {tinfo['name']} 선생님")
         st.caption(f"과목: {tinfo['subject']}")
         st.divider()
         # 미답변 질문 수 표시
@@ -1606,7 +1606,7 @@ elif st.session_state.role == "teacher":
             st.divider()
             with st.expander(f"📱 미제출 학생 알림 ({len(missing)}명)"):
                 due_str = sel_a["due_date"] or "미정"
-                default_tmpl = f"[패스파인더 국어학원] {{name}} 학생, 📚 {sel_a['title']} 과제(마감: {due_str})가 아직 제출되지 않았습니다. 빠른 제출 부탁드립니다!"
+                default_tmpl = f"[모두의 학습 관리 - ◇◇◇학원] {{name}} 학생, 📚 {sel_a['title']} 과제(마감: {due_str})가 아직 제출되지 않았습니다. 빠른 제출 부탁드립니다!"
                 tmpl = st.text_area("메시지 템플릿 ({name} 은 학생 이름으로 자동 치환)", value=default_tmpl, height=100)
                 st.divider()
 
@@ -1930,7 +1930,7 @@ elif st.session_state.role == "admin":
     with st.sidebar:
         st.markdown("### 🔑 통합 관리자")
         st.divider()
-        page = st.radio("메뉴", ["📊 전체 현황","👩‍🏫 선생님 관리","👥 학생 관리","🏫 클래스 관리","🗓 시간표 관리","📢 공지사항"])
+        page = st.radio("메뉴", ["📊 전체 현황","✏️ 선생님 관리","👥 학생 관리","🏫 클래스 관리","🗓 시간표 관리","📢 공지사항"])
         st.divider()
         if st.button("로그아웃", use_container_width=True):
             st.session_state.role = None
@@ -1972,8 +1972,8 @@ elif st.session_state.role == "admin":
         else:
             st.info("제출 내역이 없습니다.")
 
-    elif page == "👩‍🏫 선생님 관리":
-        st.subheader("👩‍🏫 선생님 관리")
+    elif page == "✏️ 선생님 관리":
+        st.subheader("✏️ 선생님 관리")
         tab1, tab2 = st.tabs(["선생님 목록","선생님 추가"])
         with tab1:
             conn = get_db()
@@ -2048,7 +2048,7 @@ elif st.session_state.role == "admin":
                     if not t_students:
                         continue
 
-                    with st.expander(f"👩‍🏫 {t['name']} ({t['subject']})  —  {len(t_students)}명", expanded=False):
+                    with st.expander(f"✏️ {t['name']} ({t['subject']})  —  {len(t_students)}명", expanded=False):
                         # 반별 그룹화
                         from itertools import groupby
                         class_groups = defaultdict(list)
@@ -2583,7 +2583,7 @@ elif st.session_state.role == "admin":
             with st.form("admin_add_student"):
                 col1, col2 = st.columns(2)
                 new_name   = col1.text_input("이름 *", placeholder="홍길동")
-                new_school = col2.text_input("학교", placeholder="패스파인더중학교")
+                new_school = col2.text_input("학교", placeholder="◇◇◇ 초/중/고")
                 col3, col4 = st.columns(2)
                 new_grade  = col3.selectbox("학년 *", GRADE_LIST)
                 new_class  = col4.selectbox("반 *", ["A반","B반","C반","D반","없음"])
@@ -2789,7 +2789,7 @@ elif st.session_state.role == "admin":
                     new_school_a = col3.text_input("학교", value=sel_s["school"] or "", key=f"assign_school_{sid_key}")
 
                     st.divider()
-                    st.markdown("**👩‍🏫 담당 선생님 배정**")
+                    st.markdown("**✏️ 담당 선생님 배정**")
                     st.caption("담당할 선생님을 선택하세요. 체크 해제 시 배정 해제됩니다.")
 
                     selected_tids = []
@@ -2870,7 +2870,7 @@ elif st.session_state.role == "admin":
                         key="bulk_dst_class")
 
                     st.divider()
-                    st.markdown("**👩‍🏫 담당 선생님 일괄 배정** (선택 사항)")
+                    st.markdown("**✏️ 담당 선생님 일괄 배정** (선택 사항)")
                     st.caption("체크한 선생님이 이 반 전체 학생에게 배정됩니다.")
 
                     bulk_tids = []
