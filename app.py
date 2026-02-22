@@ -13,13 +13,12 @@ from PIL import Image
 from io import BytesIO
 
 def load_local_logo(filepath):
-    """로컬 로고 파일을 base64로 변환"""
     try:
         with open(filepath, "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
         return f"data:image/png;base64,{b64}"
-   except:
-    return None
+    except:
+        return None
 
 icon = Image.open("icon.png")
 
