@@ -44,12 +44,22 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.markdown("""
-    <meta name="theme-color" content="#0E1117">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-""", unsafe_allow_html=True)
-
+import streamlit.components.v1 as components
+components.html("""
+<script>
+    var metas = [
+        ['theme-color', '#0E1117'],
+        ['apple-mobile-web-app-capable', 'yes'],
+        ['apple-mobile-web-app-status-bar-style', 'black-translucent']
+    ];
+    metas.forEach(function(m) {
+        var tag = document.createElement('meta');
+        tag.name = m[0];
+        tag.content = m[1];
+        document.head.appendChild(tag);
+    });
+</script>
+""", height=0)
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
