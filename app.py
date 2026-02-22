@@ -120,13 +120,13 @@ def render_timetable_html(tt_dict, pt_map, days, periods, highlight_fn=None):
     <style>
     .tt-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .tt-table { border-collapse: separate; border-spacing: 4px; min-width: 480px; width: 100%; }
-    .tt-table th { #4a7abf; color:#ffffff; font-size:0.8rem; padding:8px 4px; text-align:center; border-radius:6px; }
-    .tt-period { background:#111827; border-left:3px solid #3b82f6; border-radius:4px; padding:8px 6px; min-width:72px; }
-    .tt-period b { font-size:0.9rem; }
-    .tt-time { font-size:0.75rem; color:#93c5fd; font-weight:500; display:block; margin-top:2px; }
-    .tt-sub { font-weight:bold; display:block; }
-    .tt-teacher { color:#94a3b8; font-size:0.72rem; display:block; margin-top:2px; }
-    .tt-class { font-weight:bold; display:block; }
+    .tt-table th { background:#4a7abf; color:#ffffff; font-size:0.8rem; padding:8px 4px; text-align:center; border-radius:6px; }
+    .tt-period { background:#f0f4f8; border-left:3px solid #4a7abf; border-radius:4px; padding:8px 6px; min-width:72px; }
+    .tt-period b { font-size:0.9rem; color:#1a1a1a; }
+    .tt-time { font-size:0.75rem; color:#4a7abf; font-weight:500; display:block; margin-top:2px; }
+    .tt-sub { font-weight:bold; display:block; color:#1a1a1a; }
+    .tt-teacher { color:#666666; font-size:0.72rem; display:block; margin-top:2px; }
+    .tt-class { font-weight:bold; display:block; color:#1a1a1a; }
     </style>
     <div class="tt-wrap"><table class="tt-table">
     <thead><tr><th>교시</th>"""
