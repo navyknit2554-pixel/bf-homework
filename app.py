@@ -1,59 +1,4 @@
 import streamlit as st
-
-# CSS와 메타 태그를 변수에 담습니다.
-html_code = """
-    <head>
-        <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-        <meta name="theme-color" content="#050d1a">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-        <style>
-            /* 노치 영역까지 배경색 강제 확장 */
-            .stApp {
-                background-color: #050d1a !important;
-            }
-            header[data-testid="stHeader"] {
-                background: none !important;
-                background-color: transparent !important;
-            }
-        </style>
-    </head>
-"""
-st.markdown(html_code, unsafe_allow_html=True)
-
-# 1. 페이지 설정 (오타 주의: 딱 한 번만 써야 합니다)
-st.set_page_config(page_title="My App", layout="wide")
-
-# 2. 배경색 일체화 및 워터마크 제거 (HEX 코드 #050d1a 반영)
-st.markdown(
-    """
-    <style>
-        /* 배경색 강제 고정 */
-        html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
-            background-color: #050d1a !important;
-        }
-        
-        /* 헤더/푸터/메뉴 숨기기 */
-        header[data-testid="stHeader"] { visibility: hidden; }
-        footer { visibility: hidden; }
-        #MainMenu { visibility: hidden; }
-
-        /* 상단 여백 제거 */
-        .main .block-container {
-            padding-top: 0rem !important;
-        }
-    </style>
-    
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#050d1a">
-    """,
-    unsafe_allow_html=True
-)
-
-
-import streamlit as st
 import sqlite3
 import os
 import hashlib
@@ -64,27 +9,11 @@ import re
 import requests
 
 st.set_page_config(
-    page_title="모두의 학습 관리",
-    page_icon="✏️",
+    page_title="패스파인더 과제 관리",
+    page_icon="📚",
     layout="wide",
     initial_sidebar_state="expanded",
 )
-import streamlit as st
-
-# 페이지 설정 (선택 사항)
-st.set_page_config(page_title="모두의 학습 관리", layout="wide")
-
-# 워터마크와 메뉴를 숨기는 CSS
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-
-
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -237,7 +166,7 @@ def send_aligo_sms(receivers: list, message: str, sender: str = None) -> dict:
             "receiver": ",".join(cleaned),
             "msg":      message,
             "msg_type": "SMS" if len(message) <= 90 else "LMS",
-            "title":    "모두의 학습 관리" if len(message) > 90 else "",
+            "title":    "패스파인더 국어학원" if len(message) > 90 else "",
         }, timeout=10)
         return resp.json()
     except Exception as e:
@@ -1538,7 +1467,7 @@ elif st.session_state.role == "teacher":
             st.divider()
             with st.expander(f"📱 미제출 학생 알림 ({len(missing)}명)"):
                 due_str = sel_a["due_date"] or "미정"
-                default_tmpl = f"[모두의 학습 관리] {{name}} 학생, 📚 {sel_a['title']} 과제(마감: {due_str})가 아직 제출되지 않았습니다. 빠른 제출 부탁드립니다!"
+                default_tmpl = f"[패스파인더 국어학원] {{name}} 학생, 📚 {sel_a['title']} 과제(마감: {due_str})가 아직 제출되지 않았습니다. 빠른 제출 부탁드립니다!"
                 tmpl = st.text_area("메시지 템플릿 ({name} 은 학생 이름으로 자동 치환)", value=default_tmpl, height=100)
                 st.divider()
 
@@ -2491,7 +2420,7 @@ elif st.session_state.role == "admin":
             with st.form("admin_add_student"):
                 col1, col2 = st.columns(2)
                 new_name   = col1.text_input("이름 *", placeholder="홍길동")
-                new_school = col2.text_input("학교", placeholder="◇◇중/고")
+                new_school = col2.text_input("학교", placeholder="패스파인더중학교")
                 col3, col4 = st.columns(2)
                 new_grade  = col3.selectbox("학년 *", GRADE_LIST)
                 new_class  = col4.selectbox("반 *", ["A반","B반","C반","D반","없음"])
