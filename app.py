@@ -44,9 +44,11 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.markdown(
-    '<meta name="theme-color" content="#0E1117">',
-    unsafe_allow_html=True)
+st.markdown("""
+    <meta name="theme-color" content="#0E1117">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+""", unsafe_allow_html=True)
 
 st.markdown("""
     <style>
