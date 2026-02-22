@@ -11,18 +11,14 @@ import requests
 from PIL import Image
 from io import BytesIO
 
-def load_github_logo(url, max_width=300):
-    """GitHub 저장소에서 로고 이미지를 불러와 base64로 변환"""
+def load_local_logo(filepath):
+    """로컬 로고 파일을 base64로 변환"""
     try:
-        resp = requests.get(url, timeout=5)
-        resp.raise_for_status()
-        b64 = base64.b64encode(resp.content).decode()
+        with open(filepath, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
         return f"data:image/png;base64,{b64}"
     except:
         return None
-
-# ── GitHub 로고 URL 설정 (이 부분만 학원별로 변경) ──
-GITHUB_LOGO_URL = "https://raw.githubusercontent.com/navyknit2554-pixel/bf-homework/main/logo.png"
 
 icon = Image.open("icon.png")
 
@@ -400,8 +396,8 @@ for key in ["role","student_id","student_info","teacher_id","teacher_info","pare
 # 기존 학생 전체 학부모 계정 동기화 (앱 시작 시 1회)
 sync_all_parent_accounts()
 
-# ── 메인 로고 (GitHub에서 로드) ──
-main_logo = load_github_logo(GITHUB_LOGO_URL)
+# ── 메인 로고 ──
+main_logo = load_local_logo("logo.png")
 if main_logo:
     st.markdown(
         f"<div style='text-align:center;padding:20px 0 10px 0;'>"
