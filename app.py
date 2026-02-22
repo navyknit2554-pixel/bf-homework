@@ -121,7 +121,7 @@ def render_timetable_html(tt_dict, pt_map, days, periods, highlight_fn=None):
     <style>
     .tt-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .tt-table { border-collapse: separate; border-spacing: 4px; min-width: 480px; width: 100%; }
-    .tt-table th { background:#1e293b; color:#94a3b8; font-size:0.8rem; padding:8px 4px; text-align:center; border-radius:6px; }
+    .tt-table th { background:#262730; color:#94a3b8; font-size:0.8rem; padding:8px 4px; text-align:center; border-radius:6px; }
     .tt-period { background:#111827; border-left:3px solid #3b82f6; border-radius:4px; padding:8px 6px; min-width:72px; }
     .tt-period b { font-size:0.9rem; }
     .tt-time { font-size:0.75rem; color:#93c5fd; font-weight:500; display:block; margin-top:2px; }
