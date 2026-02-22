@@ -5,14 +5,3 @@ secondaryBackgroundColor = "#0a1628"
 primaryColor = "#3b82f6"
 textColor = "#e2e8f0"
 font = "sans serif"
-
-[server]
-enableCORS = false
-enableXsrfProtection = false
-
-[theme]
-base = "dark"
-backgroundColor = "#050d1a"
-secondaryBackgroundColor = "#0a1628"
-primaryColor = "#3b82f6"
-textColor = "#e2e8f0"
