@@ -21,28 +21,24 @@ def load_local_logo(filepath):
         return None
 
 sub_logo = load_local_logo("brandlogo.png")
+try:
+    icon = Image.open("icon.png")
+except:
+    icon = "📚"
+
+st.set_page_config(
+    page_title="모두의 학습 관리",
+    page_icon=icon,
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
 if sub_logo:
     st.markdown(
         f"<div style='text-align:right;opacity:0.4;'>"
         f"<img src='{sub_logo}' style='height:150px;'>"
         f"</div>",
         unsafe_allow_html=True)
-
-icon = Image.open("icon.png")
-
-st.set_page_config(
-    page_title="모두의 학습 관리",
-    page_icon=icon,  # ← 이모지 대신 이미지로
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-st.set_page_config(
-    page_title="패스파인더 과제 관리",
-    page_icon="📚",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
 st.markdown("""
     <style>
@@ -662,9 +658,9 @@ if st.session_state.role == "student":
             FROM assignments a
             LEFT JOIN teachers t ON a.teacher_id = t.id
             LEFT JOIN submissions s ON a.id = s.assignment_id AND s.student_id = ?
-            WHERE a.grade = ? AND a.class_name = ?
+            WHERE a.teacher_id IN (SELECT teacher_id FROM student_teachers WHERE student_id = ?)
             ORDER BY t.subject, a.due_date ASC
-        """, (sid, info["grade"], info["class_name"])).fetchall()
+        """, (sid, sid)).fetchall()
         conn.close()
 
         if not assignments:
@@ -734,9 +730,9 @@ if st.session_state.role == "student":
             SELECT v.*, t.name AS teacher_name, t.subject
             FROM videos v
             LEFT JOIN teachers t ON v.teacher_id = t.id
-            WHERE v.grade=? AND v.class_name=?
+            WHERE v.teacher_id IN (SELECT teacher_id FROM student_teachers WHERE student_id = ?)
             ORDER BY t.subject, v.category, v.created_at DESC
-        """, (info["grade"], info["class_name"])).fetchall()
+        """, (sid,)).fetchall()
         conn.close()
 
         if not videos:
@@ -900,9 +896,9 @@ if st.session_state.role == "student":
             FROM notices n
             LEFT JOIN teachers t ON n.teacher_id = t.id
             WHERE n.notice_type='subject'
-              AND n.grade=? AND n.class_name=?
+              AND n.teacher_id IN (SELECT teacher_id FROM student_teachers WHERE student_id = ?)
             ORDER BY n.created_at DESC LIMIT 20
-        """, (info["grade"], info["class_name"])).fetchall()
+        """, (sid,)).fetchall()
         conn.close()
 
         # 학원 공지 + 과목별 공지를 시간순으로 합쳐서 한 화면에 표시
@@ -1150,9 +1146,10 @@ elif st.session_state.role == "parent":
         subject_notices_p = conn.execute("""
             SELECT n.*, t.name as teacher_name_real, t.subject as teacher_subject
             FROM notices n LEFT JOIN teachers t ON n.teacher_id = t.id
-            WHERE n.notice_type='subject' AND n.grade=? AND n.class_name=?
+            WHERE n.notice_type='subject'
+              AND n.teacher_id IN (SELECT teacher_id FROM student_teachers WHERE student_id = ?)
             ORDER BY n.created_at DESC LIMIT 20
-        """, (cur_child["grade"], cur_child["class_name"])).fetchall()
+        """, (cur_child["id"],)).fetchall()
         conn.close()
 
         all_notices_merged_p = []
@@ -1201,9 +1198,9 @@ elif st.session_state.role == "parent":
             SELECT a.*, t.name as teacher_name_r, t.subject as teacher_subject_r
             FROM assignments a
             JOIN teachers t ON a.teacher_id = t.id
-            WHERE a.grade=? AND a.class_name=?
+            WHERE a.teacher_id IN (SELECT teacher_id FROM student_teachers WHERE student_id = ?)
             ORDER BY a.created_at DESC
-        """, (cur_child["grade"], cur_child["class_name"])).fetchall()
+        """, (cur_child["id"],)).fetchall()
         # 제출 현황
         submitted_ids = set(
             r["assignment_id"] for r in conn.execute(
@@ -1353,9 +1350,10 @@ elif st.session_state.role == "teacher":
         # 반별 학생 현황
         conn = get_db()
         assigned = conn.execute("""
-            SELECT DISTINCT grade, class_name FROM timetable
-            WHERE teacher_name=? ORDER BY grade, class_name
-        """, (tinfo["name"],)).fetchall()
+            SELECT DISTINCT s.grade, s.class_name
+            FROM student_teachers st JOIN students s ON st.student_id = s.id
+            WHERE st.teacher_id = ? ORDER BY s.grade, s.class_name
+        """, (tid,)).fetchall()
         conn.close()
 
         # 전체 인원 합산
@@ -1364,8 +1362,8 @@ elif st.session_state.role == "teacher":
         for row in assigned:
             conn = get_db()
             sts = conn.execute(
-                "SELECT * FROM students WHERE grade=? AND class_name=? ORDER BY name",
-                (row["grade"], row["class_name"])).fetchall()
+                "SELECT s.* FROM students s JOIN student_teachers st ON s.id = st.student_id AND st.teacher_id = ? WHERE s.grade=? AND s.class_name=? ORDER BY s.name",
+                (tid, row["grade"], row["class_name"])).fetchall()
             conn.close()
             total_students += len(sts)
             class_data.append((row["grade"], row["class_name"], sts))
@@ -1373,7 +1371,7 @@ elif st.session_state.role == "teacher":
         st.subheader(f"👥 반별 학생 현황  —  전체 {total_students}명")
 
         if not class_data:
-            st.info("시간표에 배정된 반이 없습니다. 관리자에게 시간표 등록을 요청하세요.")
+            st.info("배정된 학생이 없습니다. 관리자에게 수업 배정을 요청하세요.")
         else:
             for grade, class_name, students in class_data:
                 with st.expander(f"📋 {grade} {class_name}  —  {len(students)}명"):
@@ -1438,26 +1436,34 @@ elif st.session_state.role == "teacher":
 
     elif page == "📝 과제 등록":
         st.subheader("📝 새 과제 등록")
-        with st.form("new_assignment"):
-            title       = st.text_input("과제 제목 *", placeholder="예) 3강 문제풀이 사진 제출")
-            description = st.text_area("설명 (선택)")
-            col1, col2  = st.columns(2)
-            grades      = get_grades() or ["중1","중2","중3","고1","고2","고3"]
-            grade       = col1.selectbox("학년 *", grades)
-            classes     = get_classes(grade) or ["A반","B반"]
-            class_name  = col2.selectbox("반 *", classes)
-            due_date    = st.date_input("마감일 (선택)", value=None)
-            if st.form_submit_button("과제 등록 ✅", type="primary", use_container_width=True):
-                if not title.strip():
-                    st.error("제목을 입력해주세요.")
-                else:
-                    conn = get_db()
-                    conn.execute(
-                        "INSERT INTO assignments (title, description, grade, class_name, due_date, teacher_id) VALUES (?,?,?,?,?,?)",
-                        (title.strip(), description.strip(), grade, class_name, str(due_date) if due_date else None, tid))
-                    conn.commit()
-                    conn.close()
-                    st.success(f"✅ '{title}' 과제가 등록되었습니다!")
+        conn = get_db()
+        my_classes_a = conn.execute("""
+            SELECT DISTINCT s.grade, s.class_name
+            FROM student_teachers st JOIN students s ON st.student_id = s.id
+            WHERE st.teacher_id = ? ORDER BY s.grade, s.class_name
+        """, (tid,)).fetchall()
+        conn.close()
+        if not my_classes_a:
+            st.warning("배정된 학생이 없습니다. 관리자에게 수업 배정을 요청하세요.")
+        else:
+            with st.form("new_assignment"):
+                title       = st.text_input("과제 제목 *", placeholder="예) 3강 문제풀이 사진 제출")
+                description = st.text_area("설명 (선택)")
+                class_opts_a = [f"{r['grade']} {r['class_name']}" for r in my_classes_a]
+                sel_class_a  = st.selectbox("반 선택 *", class_opts_a)
+                grade, class_name = sel_class_a.split(" ", 1)
+                due_date    = st.date_input("마감일 (선택)", value=None)
+                if st.form_submit_button("과제 등록 ✅", type="primary", use_container_width=True):
+                    if not title.strip():
+                        st.error("제목을 입력해주세요.")
+                    else:
+                        conn = get_db()
+                        conn.execute(
+                            "INSERT INTO assignments (title, description, grade, class_name, due_date, teacher_id) VALUES (?,?,?,?,?,?)",
+                            (title.strip(), description.strip(), grade, class_name, str(due_date) if due_date else None, tid))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"✅ '{title}' 과제가 등록되었습니다!")
 
     elif page == "📋 과제 관리":
         st.subheader("📋 내 과제 목록")
@@ -1495,7 +1501,9 @@ elif st.session_state.role == "teacher":
         a_id = a_options[selected]
         conn = get_db()
         sel_a       = conn.execute("SELECT * FROM assignments WHERE id=?", (a_id,)).fetchone()
-        all_students= conn.execute("SELECT * FROM students WHERE grade=? AND class_name=? ORDER BY name", (sel_a["grade"], sel_a["class_name"])).fetchall()
+        all_students= conn.execute(
+            "SELECT s.* FROM students s JOIN student_teachers st ON s.id = st.student_id AND st.teacher_id = ? WHERE s.grade=? AND s.class_name=? ORDER BY s.name",
+            (tid, sel_a["grade"], sel_a["class_name"])).fetchall()
         submissions = conn.execute("SELECT * FROM submissions WHERE assignment_id=?", (a_id,)).fetchall()
         conn.close()
         sub_map = {s["student_id"]: dict(s) for s in submissions}
@@ -1700,15 +1708,24 @@ elif st.session_state.role == "teacher":
                 v_title    = st.text_input("영상 제목 *", placeholder="예) 1강 문학 개념 정리")
                 v_url      = st.text_input("유튜브 URL *", placeholder="https://www.youtube.com/watch?v=...")
                 v_category = st.text_input("폴더(카테고리)", placeholder="예) 1단원, 문학, 중간고사 대비")
-                col1, col2 = st.columns(2)
-                grades     = get_grades() or ["중1","중2","중3","고1","고2","고3"]
-                v_grade    = col1.selectbox("학년 *", grades, key="v_grade")
-                classes    = get_classes(v_grade) or ["A반","B반"]
-                v_class    = col2.selectbox("반 *", classes, key="v_class")
+                conn = get_db()
+                my_classes_v = conn.execute("""
+                    SELECT DISTINCT s.grade, s.class_name
+                    FROM student_teachers st JOIN students s ON st.student_id = s.id
+                    WHERE st.teacher_id = ? ORDER BY s.grade, s.class_name
+                """, (tid,)).fetchall()
+                conn.close()
+                class_opts_v = [f"{r['grade']} {r['class_name']}" for r in my_classes_v] if my_classes_v else []
+                if not class_opts_v:
+                    st.warning("배정된 반이 없습니다.")
+                sel_class_v  = st.selectbox("반 선택 *", class_opts_v, key="v_class_sel") if class_opts_v else None
                 if st.form_submit_button("영상 등록 ✅", type="primary", use_container_width=True):
                     if not v_title.strip() or not v_url.strip():
                         st.error("제목과 URL을 입력해주세요.")
+                    elif not sel_class_v:
+                        st.error("반을 선택해주세요.")
                     else:
+                        v_grade, v_class = sel_class_v.split(" ", 1)
                         conn = get_db()
                         conn.execute(
                             "INSERT INTO videos (title, youtube_url, grade, class_name, category, teacher_id) VALUES (?,?,?,?,?,?)",
@@ -1748,16 +1765,18 @@ elif st.session_state.role == "teacher":
         conn = get_db()
         tinfo_n = conn.execute("SELECT * FROM teachers WHERE id=?", (tid_n,)).fetchone()
         # 이 선생님이 담당하는 반 목록
-        assigned_n = conn.execute(
-            "SELECT DISTINCT grade, class_name FROM timetable WHERE teacher_name=? ORDER BY grade, class_name",
-            (tinfo_n["name"],)).fetchall()
+        assigned_n = conn.execute("""
+            SELECT DISTINCT s.grade, s.class_name
+            FROM student_teachers st JOIN students s ON st.student_id = s.id
+            WHERE st.teacher_id = ? ORDER BY s.grade, s.class_name
+        """, (tid_n,)).fetchall()
         conn.close()
 
         ntab_w, ntab_l = st.tabs(["✏️ 공지 작성", "📋 내 공지 목록"])
 
         with ntab_w:
             if not assigned_n:
-                st.info("시간표에 배정된 반이 없습니다. 먼저 시간표를 등록해주세요.")
+                st.info("배정된 학생이 없습니다. 관리자에게 수업 배정을 요청하세요.")
             else:
                 cls_opts = [f"{r['grade']} {r['class_name']}" for r in assigned_n]
                 with st.form("teacher_notice_form"):
