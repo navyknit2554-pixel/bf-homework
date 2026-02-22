@@ -32,7 +32,7 @@ icon = Image.open("icon.png")
 
 st.set_page_config(
     page_title="모두의 학습 관리",
-    page_icon=icon,  # ← 이모지 대신 이미지로
+    page_icon=icon.png,  # ← 이모지 대신 이미지로
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -43,6 +43,18 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+st.markdown(
+    '<meta name="theme-color" content="#0E1117">',
+    unsafe_allow_html=True)
+
+st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    </style>
+""", unsafe_allow_html=True)
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
