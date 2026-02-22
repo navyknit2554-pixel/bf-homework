@@ -32,7 +32,7 @@ icon = Image.open("icon.png")
 
 st.set_page_config(
     page_title="모두의 학습 관리",
-    page_icon=icon.png,  # ← 이모지 대신 이미지로
+    page_icon=icon,  # ← 이모지 대신 이미지로
     layout="wide",
     initial_sidebar_state="expanded",
 )
