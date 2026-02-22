@@ -44,22 +44,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-import streamlit.components.v1 as components
-components.html("""
-<script>
-    var metas = [
-        ['theme-color', '#0E1117'],
-        ['apple-mobile-web-app-capable', 'yes'],
-        ['apple-mobile-web-app-status-bar-style', 'black-translucent']
-    ];
-    metas.forEach(function(m) {
-        var tag = document.createElement('meta');
-        tag.name = m[0];
-        tag.content = m[1];
-        document.head.appendChild(tag);
-    });
-</script>
-""", height=0)
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
