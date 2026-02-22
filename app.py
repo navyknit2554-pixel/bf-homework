@@ -8,6 +8,17 @@ from collections import defaultdict
 import re
 import requests
 
+from PIL import Image
+
+icon = Image.open("icon.png")
+
+st.set_page_config(
+    page_title="모두의 학습 관리",
+    page_icon=icon,  # ← 이모지 대신 이미지로
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
 st.set_page_config(
     page_title="패스파인더 과제 관리",
     page_icon="📚",
