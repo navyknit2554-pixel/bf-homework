@@ -20,6 +20,15 @@ def load_local_logo(filepath):
     except:
         return None
 
+# ── 보조 로고 (우측 상단, 반투명) ──
+sub_logo = load_local_logo("brandlogo.png")
+if sub_logo:
+    st.markdown(
+        f"<div style='position:fixed;top:10px;right:16px;z-index:9999;opacity:0.4;'>"
+        f"<img src='{sub_logo}' style='height:40px;'>"
+        f"</div>",
+        unsafe_allow_html=True)
+
 icon = Image.open("icon.png")
 
 st.set_page_config(
