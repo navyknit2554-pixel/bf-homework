@@ -24,7 +24,7 @@ sub_logo = load_local_logo("brandlogo.png")
 if sub_logo:
     st.markdown(
         f"<div style='text-align:right;opacity:0.4;'>"
-        f"<img src='{sub_logo}' style='height:120px;'>"
+        f"<img src='{sub_logo}' style='height:150px;'>"
         f"</div>",
         unsafe_allow_html=True)
 
