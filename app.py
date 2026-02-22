@@ -46,9 +46,16 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    #MainMenu {visibility: hidden;}
+     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    .stApp > footer {display: none;}
+    .viewerBadge_container__r5tak {display: none;}
+    .stDeployButton {display: none !important;}
+    [data-testid="stStatusWidget"] {display: none !important;}
+    .stAppDeployButton {display: none !important;}
+    div[data-testid="stDecoration"] {display: none !important;}
+    a[href*="streamlit.io"] {display: none !important;}
     </style>
 """, unsafe_allow_html=True)
 
