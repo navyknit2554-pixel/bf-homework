@@ -409,12 +409,6 @@ if main_logo:
         f"</div>",
         unsafe_allow_html=True)
 
-# ── 보조 로고 (기존 base64, 오른쪽 상단 작게) ──
-st.markdown(
-    f"<div style='position:fixed;top:10px;right:16px;z-index:9999;'>"
-    f"<img src='data:image/png;base64,{logo_b64}' style='height:36px;'>"
-    f"</div>",
-    unsafe_allow_html=True)
 st.markdown("""
 <style>
 div[data-testid="stRadio"] > div { display: flex; flex-direction: column; gap: 6px; }
