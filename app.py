@@ -113,15 +113,14 @@ def render_timetable_html(tt_dict, pt_map, days, periods, highlight_fn=None):
     tt_dict: {(day, period): row} 또는 {(day, period): [row, ...]}
     highlight_fn(cell): True면 초록 강조, None이면 기본 파랑
     """
-    cell_style  = "background:#1e3a5f;border-radius:6px;padding:8px 6px;text-align:center;font-size:0.82rem;"
-    hl_style    = "background:#1a4a2a;border:2px solid #22c55e;border-radius:6px;padding:8px 6px;text-align:center;font-size:0.82rem;"
-    empty_style = "background:#0d1117;border-radius:6px;padding:8px 6px;text-align:center;color:#334155;font-size:0.82rem;"
-
+    cell_style  = "background:#e8f0fe;border:1px solid #c4d4e8;border-radius:6px;padding:8px 6px;text-align:center;font-size:0.82rem;color:#1a1a1a;"
+    hl_style    = "background:#d4edda;border:2px solid #28a745;border-radius:6px;padding:8px 6px;text-align:center;font-size:0.82rem;color:#1a1a1a;"
+    empty_style = "background:#f5f5f5;border:1px solid #e0e0e0;border-radius:6px;padding:8px 6px;text-align:center;color:#aaaaaa;font-size:0.82rem;"
     html = """
     <style>
     .tt-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .tt-table { border-collapse: separate; border-spacing: 4px; min-width: 480px; width: 100%; }
-    .tt-table th { background:#262730; color:#94a3b8; font-size:0.8rem; padding:8px 4px; text-align:center; border-radius:6px; }
+    .tt-table th { #4a7abf; color:#ffffff; font-size:0.8rem; padding:8px 4px; text-align:center; border-radius:6px; }
     .tt-period { background:#111827; border-left:3px solid #3b82f6; border-radius:4px; padding:8px 6px; min-width:72px; }
     .tt-period b { font-size:0.9rem; }
     .tt-time { font-size:0.75rem; color:#93c5fd; font-weight:500; display:block; margin-top:2px; }
