@@ -1388,7 +1388,7 @@ elif st.session_state.role == "teacher":
 
         # 선생님 시간표
         st.subheader("🗓 내 시간표")
-        DAYS = ["월","화","수","목","금"]
+        DAYS = ["월","화","수","목","금","토","일"]
         PERIODS_T = [1,2,3,4]
 
         # 내 모든 수업 한 번에 로드
