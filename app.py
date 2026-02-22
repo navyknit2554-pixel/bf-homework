@@ -7,6 +7,7 @@ from pathlib import Path
 from collections import defaultdict
 import re
 import requests
+import base64
 
 from PIL import Image
 from io import BytesIO
