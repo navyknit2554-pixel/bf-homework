@@ -29,6 +29,9 @@ if sub_logo:
         f"</div>",
         unsafe_allow_html=True)
 
+else:
+    st.error("보조 로고 로드 실패 - 파일명 확인 필요")
+
 icon = Image.open("icon.png")
 
 st.set_page_config(
