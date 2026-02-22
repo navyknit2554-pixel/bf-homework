@@ -20,17 +20,13 @@ def load_local_logo(filepath):
     except:
         return None
 
-# ── 보조 로고 (우측 상단, 반투명) ──
 sub_logo = load_local_logo("brandlogo.png")
 if sub_logo:
     st.markdown(
-        f"<div style='position:fixed;top:10px;right:16px;z-index:9999;opacity:0.4;'>"
+        f"<div style='text-align:right;opacity:0.4;'>"
         f"<img src='{sub_logo}' style='height:40px;'>"
         f"</div>",
         unsafe_allow_html=True)
-
-else:
-    st.error("보조 로고 로드 실패 - 파일명 확인 필요")
 
 icon = Image.open("icon.png")
 
