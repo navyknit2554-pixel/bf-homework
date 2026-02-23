@@ -714,7 +714,7 @@ for key in ["role","student_id","student_info","teacher_id","teacher_info","pare
 sync_all_parent_accounts()
 
 # ── 메인 로고 ──
-main_logo = load_local_logo("logo(b).png")
+main_logo = load_local_logo("logo(a).png")
 if main_logo:
     st.markdown(
         f"<div style='text-align:center;padding:20px 0 10px 0;'>"
